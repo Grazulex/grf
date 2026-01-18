@@ -1,0 +1,154 @@
+# GRF NPC Definitions
+# Format: TOML array of NPC tables
+
+[[npcs]]
+id = "robin"
+name = "Robin"
+speed = 55.0
+dialogue_id = "robin_intro"
+
+[npcs.locations]
+home = [320.0, 480.0]
+shop = [640.0, 320.0]
+beach = [800.0, 600.0]
+
+[[npcs.schedule]]
+hour = 6
+location = "home"
+activity = "sleeping"
+
+[[npcs.schedule]]
+hour = 9
+location = "shop"
+activity = "working"
+
+[[npcs.schedule]]
+hour = 17
+location = "beach"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 21
+location = "home"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 23
+location = "home"
+activity = "sleeping"
+
+
+[[npcs]]
+id = "pierre"
+name = "Pierre"
+speed = 45.0
+dialogue_id = "pierre_intro"
+
+[npcs.locations]
+store = [480.0, 160.0]
+home = [520.0, 200.0]
+square = [400.0, 300.0]
+
+[[npcs.schedule]]
+hour = 6
+location = "home"
+activity = "sleeping"
+
+[[npcs.schedule]]
+hour = 8
+location = "store"
+activity = "working"
+
+[[npcs.schedule]]
+hour = 18
+location = "square"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 20
+location = "home"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 22
+location = "home"
+activity = "sleeping"
+
+
+[[npcs]]
+id = "abigail"
+name = "Abigail"
+speed = 60.0
+dialogue_id = "abigail_intro"
+
+[npcs.locations]
+home = [200.0, 300.0]
+graveyard = [700.0, 400.0]
+forest = [100.0, 500.0]
+
+[[npcs.schedule]]
+hour = 8
+location = "home"
+activity = "sleeping"
+
+[[npcs.schedule]]
+hour = 11
+location = "home"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 14
+location = "forest"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 19
+location = "graveyard"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 23
+location = "home"
+activity = "sleeping"
+
+
+[[npcs]]
+id = "lewis"
+name = "Mayor Lewis"
+speed = 40.0
+dialogue_id = "lewis_intro"
+
+[npcs.locations]
+manor = [550.0, 100.0]
+town_square = [400.0, 300.0]
+farm = [200.0, 200.0]
+
+[[npcs.schedule]]
+hour = 6
+location = "manor"
+activity = "sleeping"
+
+[[npcs.schedule]]
+hour = 8
+location = "town_square"
+activity = "working"
+
+[[npcs.schedule]]
+hour = 12
+location = "manor"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 15
+location = "farm"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 19
+location = "manor"
+activity = "idle"
+
+[[npcs.schedule]]
+hour = 22
+location = "manor"
+activity = "sleeping"

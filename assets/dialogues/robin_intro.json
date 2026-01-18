@@ -1,0 +1,45 @@
+{
+  "id": "robin_intro",
+  "start_node": "start",
+  "nodes": {
+    "start": {
+      "id": "start",
+      "speaker": "Robin",
+      "text": "Hey there! You must be the new farmer. Welcome to Pelican Town!",
+      "choices": [
+        {"text": "Thanks! Nice to meet you.", "next_node": "nice_meet"},
+        {"text": "Who are you?", "next_node": "who_are_you"},
+        {"text": "I'm busy, bye.", "next_node": null}
+      ]
+    },
+    "nice_meet": {
+      "id": "nice_meet",
+      "speaker": "Robin",
+      "text": "Nice to meet you too! I'm Robin, the local carpenter. If you ever need any buildings constructed, just come see me!",
+      "choices": [
+        {"text": "What kind of buildings?", "next_node": "buildings"},
+        {"text": "Thanks for the info!", "next_node": "bye"}
+      ]
+    },
+    "who_are_you": {
+      "id": "who_are_you",
+      "speaker": "Robin",
+      "text": "Oh, how rude of me! I'm Robin. I run the carpentry shop just north of here with my husband Demetrius.",
+      "next": "nice_meet"
+    },
+    "buildings": {
+      "id": "buildings",
+      "speaker": "Robin",
+      "text": "I can build you barns, coops, silos, and more! Bring me the materials and some gold, and I'll have it done in no time.",
+      "choices": [
+        {"text": "Sounds great!", "next_node": "bye"},
+        {"text": "I'll think about it.", "next_node": "bye"}
+      ]
+    },
+    "bye": {
+      "id": "bye",
+      "speaker": "Robin",
+      "text": "Good luck with the farm! Come visit anytime."
+    }
+  }
+}

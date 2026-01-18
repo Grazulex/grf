@@ -1,0 +1,72 @@
+{
+  "id": "pierre_intro",
+  "start_node": "start",
+  "nodes": {
+    "start": {
+      "id": "start",
+      "speaker": "Pierre",
+      "text": "Welcome to Pierre's General Store! We have everything a farmer needs.",
+      "choices": [
+        {"text": "What do you sell?", "next_node": "sell"},
+        {"text": "Can I sell my crops here?", "next_node": "buy"},
+        {"text": "Just looking, thanks.", "next_node": null}
+      ]
+    },
+    "sell": {
+      "id": "sell",
+      "speaker": "Pierre",
+      "text": "I've got seeds for every season, fertilizer, and various supplies. My selection changes with the seasons!",
+      "choices": [
+        {"text": "Great, I'll take a look.", "next_node": "browse"},
+        {"text": "Thanks for the info.", "next_node": "bye"}
+      ]
+    },
+    "buy": {
+      "id": "buy",
+      "speaker": "Pierre",
+      "text": "Absolutely! I buy all kinds of produce. The better the quality, the more I pay. Gold star quality fetches the highest prices!",
+      "choices": [
+        {"text": "Good to know!", "next_node": "bye"},
+        {
+          "text": "Here, take these crops.",
+          "next_node": "sold",
+          "condition": {
+            "type": "has_item",
+            "item_id": "parsnip",
+            "quantity": 1
+          },
+          "action": {
+            "type": "take_item",
+            "item_id": "parsnip",
+            "quantity": 1
+          }
+        }
+      ]
+    },
+    "browse": {
+      "id": "browse",
+      "speaker": "Pierre",
+      "text": "Take your time! Let me know if you need any recommendations.",
+      "action": {
+        "type": "set_flag",
+        "flag": "visited_pierre_shop"
+      }
+    },
+    "sold": {
+      "id": "sold",
+      "speaker": "Pierre",
+      "text": "Excellent produce! Here's your payment.",
+      "action": {
+        "type": "give_item",
+        "item_id": "gold",
+        "quantity": 35
+      },
+      "next": "bye"
+    },
+    "bye": {
+      "id": "bye",
+      "speaker": "Pierre",
+      "text": "Thanks for stopping by! Come again soon."
+    }
+  }
+}
