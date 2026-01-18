@@ -1202,6 +1202,7 @@ dependencies = [
  "log",
  "pollster",
  "serde",
+ "serde_json",
  "toml",
  "winit",
 ]
