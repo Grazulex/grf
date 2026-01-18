@@ -1,0 +1,374 @@
+# GRF Item Definitions
+# Format: TOML array of item tables
+
+# ============================================================================
+# TOOLS
+# ============================================================================
+
+[[items]]
+id = "hoe"
+name = "Hoe"
+type = "tool"
+max_stack = 1
+description = "Tills soil for planting crops"
+tool_type = "hoe"
+
+[[items]]
+id = "watering_can"
+name = "Watering Can"
+type = "tool"
+max_stack = 1
+description = "Waters crops to help them grow"
+tool_type = "wateringcan"
+
+[[items]]
+id = "axe"
+name = "Axe"
+type = "tool"
+max_stack = 1
+description = "Chops trees and stumps"
+tool_type = "axe"
+
+[[items]]
+id = "pickaxe"
+name = "Pickaxe"
+type = "tool"
+max_stack = 1
+description = "Breaks rocks and mines ore"
+tool_type = "pickaxe"
+
+[[items]]
+id = "scythe"
+name = "Scythe"
+type = "tool"
+max_stack = 1
+description = "Clears grass and weeds"
+tool_type = "scythe"
+
+[[items]]
+id = "fishing_rod"
+name = "Fishing Rod"
+type = "tool"
+max_stack = 1
+description = "Catches fish in water"
+tool_type = "fishingrod"
+
+# ============================================================================
+# SEEDS - SPRING
+# ============================================================================
+
+[[items]]
+id = "parsnip_seeds"
+name = "Parsnip Seeds"
+type = "seed"
+sell_price = 10
+description = "Plant these in spring. Takes 4 days to mature."
+grows_into = "parsnip"
+seasons = ["spring"]
+
+[[items]]
+id = "potato_seeds"
+name = "Potato Seeds"
+type = "seed"
+sell_price = 25
+description = "Plant these in spring. Takes 6 days to mature."
+grows_into = "potato"
+seasons = ["spring"]
+
+[[items]]
+id = "cauliflower_seeds"
+name = "Cauliflower Seeds"
+type = "seed"
+sell_price = 40
+description = "Plant these in spring. Takes 12 days to mature."
+grows_into = "cauliflower"
+seasons = ["spring"]
+
+[[items]]
+id = "strawberry_seeds"
+name = "Strawberry Seeds"
+type = "seed"
+sell_price = 100
+description = "Plant these in spring. Takes 8 days, then produces every 4 days."
+grows_into = "strawberry"
+seasons = ["spring"]
+
+# ============================================================================
+# SEEDS - SUMMER
+# ============================================================================
+
+[[items]]
+id = "melon_seeds"
+name = "Melon Seeds"
+type = "seed"
+sell_price = 40
+description = "Plant these in summer. Takes 12 days to mature."
+grows_into = "melon"
+seasons = ["summer"]
+
+[[items]]
+id = "tomato_seeds"
+name = "Tomato Seeds"
+type = "seed"
+sell_price = 25
+description = "Plant these in summer. Takes 11 days, then produces every 4 days."
+grows_into = "tomato"
+seasons = ["summer"]
+
+[[items]]
+id = "blueberry_seeds"
+name = "Blueberry Seeds"
+type = "seed"
+sell_price = 40
+description = "Plant these in summer. Takes 13 days, then produces every 4 days."
+grows_into = "blueberry"
+seasons = ["summer"]
+
+# ============================================================================
+# SEEDS - FALL
+# ============================================================================
+
+[[items]]
+id = "pumpkin_seeds"
+name = "Pumpkin Seeds"
+type = "seed"
+sell_price = 50
+description = "Plant these in fall. Takes 13 days to mature."
+grows_into = "pumpkin"
+seasons = ["fall"]
+
+[[items]]
+id = "cranberry_seeds"
+name = "Cranberry Seeds"
+type = "seed"
+sell_price = 120
+description = "Plant these in fall. Takes 7 days, then produces every 5 days."
+grows_into = "cranberry"
+seasons = ["fall"]
+
+# ============================================================================
+# CROPS - SPRING
+# ============================================================================
+
+[[items]]
+id = "parsnip"
+name = "Parsnip"
+type = "crop"
+sell_price = 35
+description = "A spring tuber with a sharp, clean taste."
+growth_days = 4
+seasons = ["spring"]
+
+[[items]]
+id = "potato"
+name = "Potato"
+type = "crop"
+sell_price = 80
+description = "A starchy tuber that grows underground."
+growth_days = 6
+seasons = ["spring"]
+
+[[items]]
+id = "cauliflower"
+name = "Cauliflower"
+type = "crop"
+sell_price = 175
+description = "A versatile vegetable prized for its tight florets."
+growth_days = 12
+seasons = ["spring"]
+
+[[items]]
+id = "strawberry"
+name = "Strawberry"
+type = "crop"
+sell_price = 120
+description = "A sweet berry with a soft texture."
+growth_days = 8
+regrows = true
+seasons = ["spring"]
+
+# ============================================================================
+# CROPS - SUMMER
+# ============================================================================
+
+[[items]]
+id = "melon"
+name = "Melon"
+type = "crop"
+sell_price = 250
+description = "A sweet, refreshing summer fruit."
+growth_days = 12
+seasons = ["summer"]
+
+[[items]]
+id = "tomato"
+name = "Tomato"
+type = "crop"
+sell_price = 60
+description = "A versatile fruit used in many dishes."
+growth_days = 11
+regrows = true
+seasons = ["summer"]
+
+[[items]]
+id = "blueberry"
+name = "Blueberry"
+type = "crop"
+sell_price = 50
+description = "A small, sweet berry with a dark blue color."
+growth_days = 13
+regrows = true
+seasons = ["summer"]
+
+# ============================================================================
+# CROPS - FALL
+# ============================================================================
+
+[[items]]
+id = "pumpkin"
+name = "Pumpkin"
+type = "crop"
+sell_price = 320
+description = "A large orange squash with a thick rind."
+growth_days = 13
+seasons = ["fall"]
+
+[[items]]
+id = "cranberry"
+name = "Cranberry"
+type = "crop"
+sell_price = 75
+description = "A tart, red berry often used in sauces."
+growth_days = 7
+regrows = true
+seasons = ["fall"]
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+
+[[items]]
+id = "wood"
+name = "Wood"
+type = "resource"
+sell_price = 2
+description = "A common crafting material obtained from trees."
+
+[[items]]
+id = "stone"
+name = "Stone"
+type = "resource"
+sell_price = 2
+description = "A common crafting material found by breaking rocks."
+
+[[items]]
+id = "fiber"
+name = "Fiber"
+type = "resource"
+sell_price = 1
+description = "Plant fiber useful for crafting."
+
+[[items]]
+id = "hardwood"
+name = "Hardwood"
+type = "resource"
+sell_price = 15
+description = "A dense, durable wood from large stumps and logs."
+
+[[items]]
+id = "coal"
+name = "Coal"
+type = "resource"
+sell_price = 15
+description = "A combustible rock used for smelting."
+
+[[items]]
+id = "copper_ore"
+name = "Copper Ore"
+type = "resource"
+sell_price = 5
+description = "A common ore that can be smelted into bars."
+
+[[items]]
+id = "iron_ore"
+name = "Iron Ore"
+type = "resource"
+sell_price = 10
+description = "A useful ore for crafting tools and machines."
+
+[[items]]
+id = "gold_ore"
+name = "Gold Ore"
+type = "resource"
+sell_price = 25
+description = "A precious ore with many uses."
+
+[[items]]
+id = "copper_bar"
+name = "Copper Bar"
+type = "resource"
+sell_price = 60
+description = "A bar of pure copper."
+
+[[items]]
+id = "iron_bar"
+name = "Iron Bar"
+type = "resource"
+sell_price = 120
+description = "A bar of pure iron."
+
+[[items]]
+id = "gold_bar"
+name = "Gold Bar"
+type = "resource"
+sell_price = 250
+description = "A bar of pure gold."
+
+# ============================================================================
+# CONSUMABLES
+# ============================================================================
+
+[[items]]
+id = "salad"
+name = "Salad"
+type = "consumable"
+sell_price = 110
+description = "A healthy bowl of greens."
+energy = 113
+health = 50
+
+[[items]]
+id = "fried_egg"
+name = "Fried Egg"
+type = "consumable"
+sell_price = 35
+description = "A simple, quick breakfast."
+energy = 50
+health = 22
+
+[[items]]
+id = "bread"
+name = "Bread"
+type = "consumable"
+sell_price = 60
+description = "A basic food made from wheat flour."
+energy = 50
+health = 22
+
+[[items]]
+id = "coffee"
+name = "Coffee"
+type = "consumable"
+sell_price = 150
+description = "A hot cup of coffee. Gives a speed boost."
+energy = 3
+health = 1
+
+[[items]]
+id = "energy_tonic"
+name = "Energy Tonic"
+type = "consumable"
+sell_price = 500
+description = "Restores a lot of energy."
+energy = 200
+health = 0

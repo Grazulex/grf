@@ -3,6 +3,8 @@
 //! A 2D RPG/Farming game engine built from scratch in Rust.
 
 mod components;
+mod inventory;
+mod items;
 mod systems;
 
 use std::sync::Arc;
