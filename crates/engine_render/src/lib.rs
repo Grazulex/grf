@@ -5,6 +5,7 @@
 
 mod animation;
 mod camera;
+mod day_night;
 mod renderer;
 mod sprite;
 mod texture;
@@ -12,6 +13,7 @@ mod tilemap;
 
 pub use animation::{Animation, AnimationController, AnimationFrame};
 pub use camera::Camera2D;
+pub use day_night::{Color, DayNightCycle};
 pub use glam;
 pub use renderer::Renderer;
 pub use sprite::{Sprite, SpriteBatch, SpriteRegion, SpriteVertex};
