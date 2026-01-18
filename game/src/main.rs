@@ -16,7 +16,7 @@ use anyhow::Result;
 use engine_core::GameTime;
 use engine_ecs::{Entity, World};
 use engine_input::{Input, KeyCode};
-use engine_render::{glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
+use engine_render::{glam, glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
 use engine_window::{winit::event::{KeyEvent, WindowEvent}, App, Window, WindowConfig};
 use log::{error, info};
 use winit::window::Window as WinitWindow;
@@ -224,16 +224,31 @@ impl App for Game {
         // Toggle debug overlay with F12
         #[cfg(feature = "debug-tools")]
         {
-            let toggle_debug = self
-                .world
-                .get_resource::<Input>()
-                .map(|i| i.is_key_just_pressed(KeyCode::F12))
-                .unwrap_or(false);
+            let input = self.world.get_resource::<Input>();
+
+            // F12 toggles main debug overlay
+            let toggle_debug = input.map(|i| i.is_key_just_pressed(KeyCode::F12)).unwrap_or(false);
             if toggle_debug {
                 self.debug_overlay.toggle();
                 info!(
                     "Debug overlay {}",
                     if self.debug_overlay.is_enabled() {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                );
+            }
+
+            // Ctrl+C toggles collision boxes
+            let toggle_collision = input
+                .map(|i| i.is_key_pressed(KeyCode::LCtrl) && i.is_key_just_pressed(KeyCode::C))
+                .unwrap_or(false);
+            if toggle_collision && self.debug_overlay.is_enabled() {
+                self.debug_overlay.config.show_collisions = !self.debug_overlay.config.show_collisions;
+                info!(
+                    "Collision boxes {}",
+                    if self.debug_overlay.config.show_collisions {
                         "enabled"
                     } else {
                         "disabled"
@@ -276,6 +291,71 @@ impl App for Game {
         #[cfg(feature = "debug-tools")]
         if let (Some(egui_renderer), Some(window)) = (&mut self.egui_renderer, &self.window) {
             egui_renderer.begin_frame(window);
+        }
+
+        // Populate collision debug data if visualization is enabled
+        #[cfg(feature = "debug-tools")]
+        if self.debug_overlay.should_show_collisions() {
+            if let Some(renderer) = &self.renderer {
+                let size = renderer.size();
+
+                // Get view matrix from camera
+                let view_matrix = self
+                    .world
+                    .get_resource::<Camera2D>()
+                    .map(|c| c.view_matrix())
+                    .unwrap_or(glam::Mat4::IDENTITY);
+
+                // Set collision data with camera transform
+                self.debug_overlay.set_collision_data(view_matrix, (size.0 as f32, size.1 as f32));
+
+                // Add entity collision boxes
+                for (entity, collider) in self.world.query::<Collider>() {
+                    if let Some(pos) = self.world.get::<Position>(entity) {
+                        let half = collider.half_size();
+                        let min = pos.current - half;
+                        let max = pos.current + half;
+
+                        // Player is green, others are cyan
+                        let color = if Some(entity) == self.player_entity {
+                            engine_debug::DebugColor::GREEN
+                        } else {
+                            engine_debug::DebugColor::LIGHT_BLUE
+                        };
+
+                        self.debug_overlay.add_entity_box(min, max, color);
+                    }
+                }
+
+                // Add tile collision boxes from tilemap (visible tiles only)
+                if let (Some(tilemap), Some(camera)) = (
+                    self.world.get_resource::<Tilemap>(),
+                    self.world.get_resource::<Camera2D>(),
+                ) {
+                    if tilemap.has_collision() {
+                        let visible = camera.visible_bounds();
+                        let (tile_w, tile_h) = (tilemap.tile_width as f32, tilemap.tile_height as f32);
+                        let (map_w, map_h) = (tilemap.width as i32, tilemap.height as i32);
+
+                        // Calculate visible tile range (clamped to map bounds)
+                        let start_x = ((visible.0.x / tile_w).floor() as i32).max(0);
+                        let start_y = ((visible.0.y / tile_h).floor() as i32).max(0);
+                        let end_x = ((visible.1.x / tile_w).ceil() as i32).min(map_w);
+                        let end_y = ((visible.1.y / tile_h).ceil() as i32).min(map_h);
+
+                        for ty in start_y..end_y {
+                            for tx in start_x..end_x {
+                                let idx = (ty * map_w + tx) as usize;
+                                if idx < tilemap.collision.len() && tilemap.collision[idx] {
+                                    let min = Vec2::new(tx as f32 * tile_w, ty as f32 * tile_h);
+                                    let max = min + Vec2::new(tile_w, tile_h);
+                                    self.debug_overlay.add_tile_box(min, max);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if let Some(renderer) = &mut self.renderer {

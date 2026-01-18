@@ -17,7 +17,9 @@ mod overlay;
 #[cfg(feature = "debug-tools")]
 pub use egui_renderer::EguiRenderer;
 #[cfg(feature = "debug-tools")]
-pub use overlay::{DebugOverlay, PanelState};
+pub use overlay::{DebugOverlay, PanelState, DebugBox, CollisionDebugData};
+#[cfg(feature = "debug-tools")]
+pub use egui::Color32 as DebugColor;
 
 /// Debug overlay toggle key
 pub const DEBUG_TOGGLE_KEY: &str = "F12";

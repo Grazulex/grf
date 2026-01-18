@@ -5,8 +5,55 @@
 #![cfg(feature = "debug-tools")]
 
 use crate::DebugConfig;
-use egui::{Context, RichText, Window};
+use egui::{Context, RichText, Window, Color32, Stroke, Rect, Pos2};
 use engine_core::GameTime;
+use glam::{Vec2, Mat4};
+
+/// A debug collision box to render
+#[derive(Debug, Clone)]
+pub struct DebugBox {
+    /// World-space minimum corner
+    pub min: Vec2,
+    /// World-space maximum corner
+    pub max: Vec2,
+    /// Color for the box
+    pub color: Color32,
+    /// Label to display (optional)
+    pub label: Option<String>,
+}
+
+impl DebugBox {
+    /// Create a new debug box
+    #[must_use]
+    pub fn new(min: Vec2, max: Vec2, color: Color32) -> Self {
+        Self {
+            min,
+            max,
+            color,
+            label: None,
+        }
+    }
+
+    /// Add a label to the box
+    #[must_use]
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+/// Collision debug data for rendering
+#[derive(Debug, Default)]
+pub struct CollisionDebugData {
+    /// Entity collision boxes
+    pub entity_boxes: Vec<DebugBox>,
+    /// Tile collision boxes
+    pub tile_boxes: Vec<DebugBox>,
+    /// Camera view matrix for world-to-screen conversion
+    pub view_matrix: Mat4,
+    /// Screen size
+    pub screen_size: (f32, f32),
+}
 
 /// Panel visibility state
 #[derive(Debug, Default)]
@@ -37,6 +84,8 @@ pub struct DebugOverlay {
     console_input: String,
     /// Console output history
     console_output: Vec<String>,
+    /// Collision debug data
+    collision_data: CollisionDebugData,
 }
 
 impl Default for DebugOverlay {
@@ -59,7 +108,34 @@ impl DebugOverlay {
                 "Debug Console initialized.".to_string(),
                 "Type 'help' for available commands.".to_string(),
             ],
+            collision_data: CollisionDebugData::default(),
         }
+    }
+
+    /// Check if collision visualization should be rendered
+    #[must_use]
+    pub fn should_show_collisions(&self) -> bool {
+        self.config.enabled && self.config.show_collisions
+    }
+
+    /// Update collision debug data
+    pub fn set_collision_data(&mut self, view_matrix: Mat4, screen_size: (f32, f32)) {
+        self.collision_data.view_matrix = view_matrix;
+        self.collision_data.screen_size = screen_size;
+        self.collision_data.entity_boxes.clear();
+        self.collision_data.tile_boxes.clear();
+    }
+
+    /// Add an entity collision box
+    pub fn add_entity_box(&mut self, min: Vec2, max: Vec2, color: Color32) {
+        self.collision_data.entity_boxes.push(DebugBox::new(min, max, color));
+    }
+
+    /// Add a tile collision box
+    pub fn add_tile_box(&mut self, min: Vec2, max: Vec2) {
+        self.collision_data.tile_boxes.push(
+            DebugBox::new(min, max, Color32::from_rgba_unmultiplied(255, 165, 0, 100))
+        );
     }
 
     /// Toggle debug mode (F12)
@@ -97,6 +173,11 @@ impl DebugOverlay {
         // Update FPS history
         self.update_fps(game_time);
 
+        // Render collision boxes in world space (before UI panels)
+        if self.config.show_collisions {
+            self.render_collision_boxes(ctx);
+        }
+
         // Main debug menu bar
         self.render_menu_bar(ctx);
 
@@ -119,6 +200,79 @@ impl DebugOverlay {
 
         if self.panels.show_console {
             self.render_console(ctx);
+        }
+    }
+
+    /// Convert world position to screen position
+    fn world_to_screen(&self, world_pos: Vec2) -> Pos2 {
+        let (screen_w, screen_h) = self.collision_data.screen_size;
+
+        // Apply view matrix transformation
+        let pos4 = self.collision_data.view_matrix * glam::Vec4::new(world_pos.x, world_pos.y, 0.0, 1.0);
+
+        // NDC to screen coordinates
+        let screen_x = (pos4.x + 1.0) * 0.5 * screen_w;
+        let screen_y = (1.0 - pos4.y) * 0.5 * screen_h; // Flip Y
+
+        Pos2::new(screen_x, screen_y)
+    }
+
+    /// Render collision debug boxes
+    fn render_collision_boxes(&self, ctx: &Context) {
+        let painter = ctx.layer_painter(egui::LayerId::background());
+
+        // Render tile collision boxes (orange, semi-transparent fill)
+        for debug_box in &self.collision_data.tile_boxes {
+            let min = self.world_to_screen(debug_box.min);
+            let max = self.world_to_screen(debug_box.max);
+
+            let rect = Rect::from_min_max(
+                Pos2::new(min.x.min(max.x), min.y.min(max.y)),
+                Pos2::new(min.x.max(max.x), min.y.max(max.y)),
+            );
+
+            painter.rect(
+                rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(255, 165, 0, 50), // Orange fill
+                Stroke::new(1.0, Color32::from_rgb(255, 165, 0)),  // Orange stroke
+            );
+        }
+
+        // Render entity collision boxes (colored based on type)
+        for debug_box in &self.collision_data.entity_boxes {
+            let min = self.world_to_screen(debug_box.min);
+            let max = self.world_to_screen(debug_box.max);
+
+            let rect = Rect::from_min_max(
+                Pos2::new(min.x.min(max.x), min.y.min(max.y)),
+                Pos2::new(min.x.max(max.x), min.y.max(max.y)),
+            );
+
+            let fill_color = Color32::from_rgba_unmultiplied(
+                debug_box.color.r(),
+                debug_box.color.g(),
+                debug_box.color.b(),
+                50,
+            );
+
+            painter.rect(
+                rect,
+                0.0,
+                fill_color,
+                Stroke::new(2.0, debug_box.color),
+            );
+
+            // Draw label if present
+            if let Some(label) = &debug_box.label {
+                painter.text(
+                    Pos2::new(rect.min.x, rect.min.y - 12.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    label,
+                    egui::FontId::proportional(10.0),
+                    debug_box.color,
+                );
+            }
         }
     }
 
