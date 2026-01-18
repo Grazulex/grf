@@ -9,6 +9,16 @@
 //!
 //! All features are gated behind the `debug-tools` feature.
 
+#[cfg(feature = "debug-tools")]
+mod egui_renderer;
+#[cfg(feature = "debug-tools")]
+mod overlay;
+
+#[cfg(feature = "debug-tools")]
+pub use egui_renderer::EguiRenderer;
+#[cfg(feature = "debug-tools")]
+pub use overlay::{DebugOverlay, PanelState};
+
 /// Debug overlay toggle key
 pub const DEBUG_TOGGLE_KEY: &str = "F12";
 

@@ -140,6 +140,12 @@ impl Renderer {
         &self.queue
     }
 
+    /// Get the surface format
+    #[must_use]
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+
     /// Get the texture bind group layout for creating texture bind groups
     #[must_use]
     pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
@@ -191,14 +197,15 @@ impl Renderer {
         self.sprite_batch.draw(sprite);
     }
 
-    /// End the frame and present
-    pub fn end_frame(&mut self, mut frame: Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
+    /// Flush sprites to the frame (call before overlay rendering)
+    /// This clears the screen and renders all batched sprites
+    pub fn flush_sprites(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
         // Use white texture if none provided
         let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
 
         {
             let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("Sprite Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &frame.view,
                     resolve_target: None,
@@ -215,8 +222,45 @@ impl Renderer {
             self.sprite_batch.end(&self.queue, &mut render_pass, bind_group);
         }
 
-        self.queue.submit(std::iter::once(frame.encoder.finish()));
-        frame.output.present();
+        // Reset batch so end_frame knows sprites were already rendered
+        self.sprite_batch.begin();
+    }
+
+    /// End the frame and present (submits commands and presents)
+    pub fn end_frame(&mut self, frame: Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
+        // Use white texture if none provided
+        let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
+
+        // Only render sprites here if flush_sprites wasn't called
+        // Check if batch is non-empty
+        if !self.sprite_batch.is_empty() {
+            let mut frame = frame;
+            {
+                let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                self.sprite_batch.end(&self.queue, &mut render_pass, bind_group);
+            }
+
+            self.queue.submit(std::iter::once(frame.encoder.finish()));
+            frame.output.present();
+        } else {
+            // Sprites already flushed, just submit
+            self.queue.submit(std::iter::once(frame.encoder.finish()));
+            frame.output.present();
+        }
     }
 
     /// Simple render method for backwards compatibility (renders a colored quad)
@@ -240,6 +284,8 @@ impl Renderer {
 /// A frame in progress
 pub struct Frame {
     output: wgpu::SurfaceTexture,
-    view: wgpu::TextureView,
-    encoder: wgpu::CommandEncoder,
+    /// The texture view for rendering
+    pub view: wgpu::TextureView,
+    /// The command encoder for recording GPU commands
+    pub encoder: wgpu::CommandEncoder,
 }

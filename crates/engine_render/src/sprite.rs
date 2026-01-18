@@ -354,6 +354,12 @@ impl SpriteBatch {
         self.sprite_count = 0;
     }
 
+    /// Check if the batch is empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.sprite_count == 0
+    }
+
     /// Add a sprite to the current batch
     pub fn draw(&mut self, sprite: &Sprite) {
         if self.sprite_count >= MAX_SPRITES {

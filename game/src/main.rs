@@ -17,9 +17,12 @@ use engine_core::GameTime;
 use engine_ecs::{Entity, World};
 use engine_input::{Input, KeyCode};
 use engine_render::{glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
-use engine_window::{winit::event::KeyEvent, App, Window, WindowConfig};
+use engine_window::{winit::event::{KeyEvent, WindowEvent}, App, Window, WindowConfig};
 use log::{error, info};
 use winit::window::Window as WinitWindow;
+
+#[cfg(feature = "debug-tools")]
+use engine_debug::{DebugOverlay, EguiRenderer};
 
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use systems::{camera_system, input_system, movement_system};
@@ -38,6 +41,13 @@ struct Game {
     tileset_bind_group: Option<wgpu::BindGroup>,
     player_texture: Option<Texture>,
     player_bind_group: Option<wgpu::BindGroup>,
+    // Window reference for egui
+    window: Option<Arc<WinitWindow>>,
+    // Debug tools (feature-gated)
+    #[cfg(feature = "debug-tools")]
+    egui_renderer: Option<EguiRenderer>,
+    #[cfg(feature = "debug-tools")]
+    debug_overlay: DebugOverlay,
 }
 
 impl Game {
@@ -56,6 +66,11 @@ impl Game {
             tileset_bind_group: None,
             player_texture: None,
             player_bind_group: None,
+            window: None,
+            #[cfg(feature = "debug-tools")]
+            egui_renderer: None,
+            #[cfg(feature = "debug-tools")]
+            debug_overlay: DebugOverlay::new(),
         }
     }
 
@@ -119,9 +134,25 @@ impl Game {
 
 impl App for Game {
     fn init(&mut self, window: Arc<WinitWindow>) {
+        // Store window reference for egui
+        self.window = Some(Arc::clone(&window));
+
         // Create renderer
-        let renderer = pollster::block_on(Renderer::new(window));
+        let renderer = pollster::block_on(Renderer::new(Arc::clone(&window)));
         let size = renderer.size();
+
+        // Initialize debug tools
+        #[cfg(feature = "debug-tools")]
+        {
+            let egui_renderer = EguiRenderer::new(
+                renderer.device(),
+                renderer.surface_format(),
+                &window,
+                window.scale_factor() as f32,
+            );
+            self.egui_renderer = Some(egui_renderer);
+            info!("Debug tools initialized (F12 to toggle)");
+        }
 
         // Load tilemap
         let player_start = match Tilemap::load("assets/maps/test.json") {
@@ -190,6 +221,27 @@ impl App for Game {
             }
         }
 
+        // Toggle debug overlay with F12
+        #[cfg(feature = "debug-tools")]
+        {
+            let toggle_debug = self
+                .world
+                .get_resource::<Input>()
+                .map(|i| i.is_key_just_pressed(KeyCode::F12))
+                .unwrap_or(false);
+            if toggle_debug {
+                self.debug_overlay.toggle();
+                info!(
+                    "Debug overlay {}",
+                    if self.debug_overlay.is_enabled() {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                );
+            }
+        }
+
         // Fixed timestep updates
         while self.game_time.should_fixed_update() {
             // Run ECS systems
@@ -220,6 +272,12 @@ impl App for Game {
     }
 
     fn render(&mut self) {
+        // Start egui frame (must be before begin_frame for proper input handling)
+        #[cfg(feature = "debug-tools")]
+        if let (Some(egui_renderer), Some(window)) = (&mut self.egui_renderer, &self.window) {
+            egui_renderer.begin_frame(window);
+        }
+
         if let Some(renderer) = &mut self.renderer {
             // Apply camera
             if let Some(camera) = self.world.get_resource::<Camera2D>() {
@@ -227,7 +285,7 @@ impl App for Game {
             }
 
             match renderer.begin_frame() {
-                Ok(frame) => {
+                Ok(mut frame) => {
                     // Get camera and tilemap for rendering
                     let camera_ptr = self
                         .world
@@ -270,6 +328,26 @@ impl App for Game {
                         }
                     }
 
+                    // Flush sprites before overlay rendering
+                    #[cfg(feature = "debug-tools")]
+                    renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
+
+                    // Render debug overlay on top (egui)
+                    #[cfg(feature = "debug-tools")]
+                    if let (Some(egui_renderer), Some(window)) = (&mut self.egui_renderer, &self.window) {
+                        // Render debug overlay UI
+                        self.debug_overlay.render(egui_renderer.context(), &self.game_time);
+
+                        // End egui frame and render to the current frame
+                        egui_renderer.end_frame_and_render(
+                            renderer.device(),
+                            renderer.queue(),
+                            &mut frame.encoder,
+                            &frame.view,
+                            window,
+                        );
+                    }
+
                     renderer.end_frame(frame, self.tileset_bind_group.as_ref());
                 }
                 Err(wgpu::SurfaceError::Lost) => {
@@ -292,6 +370,15 @@ impl App for Game {
         }
     }
 
+    fn on_window_event(&mut self, event: &WindowEvent) -> bool {
+        // Pass events to egui for input handling
+        #[cfg(feature = "debug-tools")]
+        if let (Some(egui_renderer), Some(window)) = (&mut self.egui_renderer, &self.window) {
+            return egui_renderer.handle_event(window, event);
+        }
+        false
+    }
+
     fn on_keyboard_event(&mut self, event: &KeyEvent) {
         if let Some(input) = self.world.get_resource_mut::<Input>() {
             input.on_keyboard_event(event);
@@ -304,6 +391,11 @@ impl App for Game {
         }
         if let Some(camera) = self.world.get_resource_mut::<Camera2D>() {
             camera.set_viewport(width as f32, height as f32);
+        }
+        #[cfg(feature = "debug-tools")]
+        if let Some(egui_renderer) = &mut self.egui_renderer {
+            let scale = self.window.as_ref().map(|w| w.scale_factor()).unwrap_or(1.0) as f32;
+            egui_renderer.resize(width, height, scale);
         }
     }
 

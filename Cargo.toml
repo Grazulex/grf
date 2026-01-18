@@ -63,6 +63,7 @@ pollster = "0.3"
 egui = "0.27"
 egui-wgpu = "0.27"
 egui-winit = "0.27"
+egui_plot = "0.27"
 
 # Internal crates
 engine_core = { path = "crates/engine_core" }

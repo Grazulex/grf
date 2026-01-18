@@ -102,31 +102,46 @@ impl Window {
         let window_clone = Arc::clone(&window);
         event_loop.run(move |event, elwt| {
             match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::CloseRequested => {
-                        if app.on_close_requested() {
-                            log::info!("Window close requested, exiting...");
-                            elwt.exit();
+                Event::WindowEvent { event, .. } => {
+                    // Give app a chance to handle the event first (e.g., for egui)
+                    let consumed = app.on_window_event(&event);
+
+                    // If not consumed, handle built-in events
+                    if !consumed {
+                        match event {
+                            WindowEvent::CloseRequested => {
+                                if app.on_close_requested() {
+                                    log::info!("Window close requested, exiting...");
+                                    elwt.exit();
+                                }
+                            }
+
+                            WindowEvent::Resized(size) => {
+                                log::debug!("Window resized to {}x{}", size.width, size.height);
+                                app.on_resize(size.width, size.height);
+                            }
+
+                            WindowEvent::KeyboardInput { event, .. } => {
+                                app.on_keyboard_event(&event);
+                            }
+
+                            WindowEvent::RedrawRequested => {
+                                app.update();
+                                app.render();
+                                app.end_frame();
+                            }
+
+                            _ => {}
+                        }
+                    } else {
+                        // Even if consumed, handle RedrawRequested
+                        if let WindowEvent::RedrawRequested = event {
+                            app.update();
+                            app.render();
+                            app.end_frame();
                         }
                     }
-
-                    WindowEvent::Resized(size) => {
-                        log::debug!("Window resized to {}x{}", size.width, size.height);
-                        app.on_resize(size.width, size.height);
-                    }
-
-                    WindowEvent::KeyboardInput { event, .. } => {
-                        app.on_keyboard_event(&event);
-                    }
-
-                    WindowEvent::RedrawRequested => {
-                        app.update();
-                        app.render();
-                        app.end_frame();
-                    }
-
-                    _ => {}
-                },
+                }
 
                 Event::AboutToWait => {
                     // Request redraw to keep the loop going
@@ -153,6 +168,12 @@ pub trait App {
 
     /// Called at the end of each frame (for input state transitions)
     fn end_frame(&mut self) {}
+
+    /// Called for window events (for egui integration etc.)
+    /// Return true if the event was consumed and should not be processed further
+    fn on_window_event(&mut self, _event: &WindowEvent) -> bool {
+        false
+    }
 
     /// Called when a keyboard event occurs
     fn on_keyboard_event(&mut self, event: &KeyEvent) {

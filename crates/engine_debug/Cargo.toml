@@ -8,12 +8,16 @@ description = "Debug tools and overlays (feature-gated)"
 
 [features]
 default = []
-debug-tools = ["egui", "egui-wgpu", "egui-winit"]
+debug-tools = ["egui", "egui-wgpu", "egui-winit", "egui_plot"]
 
 [dependencies]
 log = { workspace = true }
 glam = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
 egui = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
+egui_plot = { workspace = true, optional = true }
 engine_ecs = { workspace = true }
+engine_core = { workspace = true }
