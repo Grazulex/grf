@@ -1,0 +1,11 @@
+[package]
+name = "engine_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core game loop, time management and lifecycle"
+
+[dependencies]
+instant = { workspace = true }
+log = { workspace = true }

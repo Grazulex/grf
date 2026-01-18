@@ -1,0 +1,10 @@
+[package]
+name = "engine_ecs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Entity-Component-System architecture"
+
+[dependencies]
+log = { workspace = true }

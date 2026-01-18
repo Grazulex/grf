@@ -1,0 +1,32 @@
+[package]
+name = "grf_game"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "GRF - A 2D RPG/Farming game"
+
+[features]
+default = ["debug-tools"]
+debug-tools = ["engine_debug/debug-tools"]
+
+[dependencies]
+# Engine crates
+engine_core = { workspace = true }
+engine_window = { workspace = true }
+engine_render = { workspace = true }
+engine_input = { workspace = true }
+engine_audio = { workspace = true }
+engine_ecs = { workspace = true }
+engine_physics = { workspace = true }
+engine_assets = { workspace = true }
+engine_ui = { workspace = true }
+engine_debug = { workspace = true }
+
+# External
+log = { workspace = true }
+env_logger = { workspace = true }
+glam = { workspace = true }
+winit = { workspace = true }
+anyhow = { workspace = true }
+pollster = { workspace = true }

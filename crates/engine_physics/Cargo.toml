@@ -1,0 +1,12 @@
+[package]
+name = "engine_physics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "2D collision detection with AABB and spatial grid"
+
+[dependencies]
+glam = { workspace = true }
+log = { workspace = true }
+engine_ecs = { workspace = true }

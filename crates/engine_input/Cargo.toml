@@ -1,0 +1,12 @@
+[package]
+name = "engine_input"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Input abstraction for keyboard, mouse and gamepad"
+
+[dependencies]
+winit = { workspace = true }
+glam = { workspace = true }
+log = { workspace = true }

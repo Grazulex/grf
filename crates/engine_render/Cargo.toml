@@ -1,0 +1,16 @@
+[package]
+name = "engine_render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "2D rendering pipeline with wgpu"
+
+[dependencies]
+wgpu = { workspace = true }
+glam = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+winit = { workspace = true }
+bytemuck = { workspace = true }
+engine_window = { workspace = true }

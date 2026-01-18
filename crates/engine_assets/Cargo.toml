@@ -1,0 +1,11 @@
+[package]
+name = "engine_assets"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Asset loading and caching"
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }

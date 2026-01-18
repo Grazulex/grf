@@ -1,0 +1,11 @@
+[package]
+name = "engine_audio"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Audio system with rodio"
+
+[dependencies]
+rodio = { workspace = true }
+log = { workspace = true }

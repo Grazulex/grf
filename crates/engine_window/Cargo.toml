@@ -1,0 +1,11 @@
+[package]
+name = "engine_window"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Window creation and event handling with winit"
+
+[dependencies]
+winit = { workspace = true }
+log = { workspace = true }

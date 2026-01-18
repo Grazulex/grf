@@ -1,0 +1,19 @@
+[package]
+name = "engine_debug"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Debug tools and overlays (feature-gated)"
+
+[features]
+default = []
+debug-tools = ["egui", "egui-wgpu", "egui-winit"]
+
+[dependencies]
+log = { workspace = true }
+glam = { workspace = true }
+egui = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
+egui-winit = { workspace = true, optional = true }
+engine_ecs = { workspace = true }
