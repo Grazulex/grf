@@ -107,6 +107,103 @@ pub struct ZOrderDebugData {
     pub screen_size: (f32, f32),
 }
 
+/// Component value for display/editing
+#[derive(Debug, Clone)]
+pub enum ComponentValue {
+    /// Vec2 value (Position, Velocity)
+    Vec2 { x: f32, y: f32 },
+    /// Float value
+    Float(f32),
+    /// Integer value
+    Int(i32),
+    /// Boolean value
+    Bool(bool),
+    /// String value
+    String(String),
+    /// Size (width, height)
+    Size { width: f32, height: f32 },
+}
+
+/// Component information for the inspector
+#[derive(Debug, Clone)]
+pub struct ComponentInfo {
+    /// Component name
+    pub name: String,
+    /// Component value
+    pub value: ComponentValue,
+    /// Whether this component is editable
+    pub editable: bool,
+}
+
+impl ComponentInfo {
+    /// Create a new component info
+    #[must_use]
+    pub fn new(name: impl Into<String>, value: ComponentValue, editable: bool) -> Self {
+        Self {
+            name: name.into(),
+            value,
+            editable,
+        }
+    }
+
+    /// Create a Vec2 component
+    #[must_use]
+    pub fn vec2(name: impl Into<String>, x: f32, y: f32, editable: bool) -> Self {
+        Self::new(name, ComponentValue::Vec2 { x, y }, editable)
+    }
+
+    /// Create a Size component
+    #[must_use]
+    pub fn size(name: impl Into<String>, width: f32, height: f32) -> Self {
+        Self::new(name, ComponentValue::Size { width, height }, false)
+    }
+
+    /// Create a Bool component
+    #[must_use]
+    pub fn bool(name: impl Into<String>, value: bool) -> Self {
+        Self::new(name, ComponentValue::Bool(value), false)
+    }
+}
+
+/// Entity information for the inspector
+#[derive(Debug, Clone)]
+pub struct EntityInfo {
+    /// Entity ID
+    pub id: u32,
+    /// Entity name/label
+    pub name: String,
+    /// Components on this entity
+    pub components: Vec<ComponentInfo>,
+}
+
+impl EntityInfo {
+    /// Create a new entity info
+    #[must_use]
+    pub fn new(id: u32, name: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            components: Vec::new(),
+        }
+    }
+
+    /// Add a component
+    pub fn add_component(&mut self, component: ComponentInfo) {
+        self.components.push(component);
+    }
+}
+
+/// ECS inspector data
+#[derive(Debug, Default)]
+pub struct EcsInspectorData {
+    /// All entities
+    pub entities: Vec<EntityInfo>,
+    /// Total entity count
+    pub entity_count: usize,
+    /// Total component count
+    pub component_count: usize,
+}
+
 /// Panel visibility state
 #[derive(Debug, Default)]
 pub struct PanelState {
@@ -142,6 +239,10 @@ pub struct DebugOverlay {
     collision_data: CollisionDebugData,
     /// Z-order debug data
     zorder_data: ZOrderDebugData,
+    /// ECS inspector data
+    ecs_data: EcsInspectorData,
+    /// Currently selected entity ID
+    selected_entity: Option<u32>,
 }
 
 impl Default for DebugOverlay {
@@ -166,6 +267,8 @@ impl DebugOverlay {
             ],
             collision_data: CollisionDebugData::default(),
             zorder_data: ZOrderDebugData::default(),
+            ecs_data: EcsInspectorData::default(),
+            selected_entity: None,
         }
     }
 
@@ -222,6 +325,30 @@ impl DebugOverlay {
             color,
             count,
         });
+    }
+
+    /// Clear ECS inspector data for new frame
+    pub fn clear_ecs_data(&mut self) {
+        self.ecs_data.entities.clear();
+        self.ecs_data.entity_count = 0;
+        self.ecs_data.component_count = 0;
+    }
+
+    /// Set ECS statistics
+    pub fn set_ecs_stats(&mut self, entity_count: usize, component_count: usize) {
+        self.ecs_data.entity_count = entity_count;
+        self.ecs_data.component_count = component_count;
+    }
+
+    /// Add an entity to the inspector
+    pub fn add_entity(&mut self, entity: EntityInfo) {
+        self.ecs_data.entities.push(entity);
+    }
+
+    /// Get the currently selected entity ID
+    #[must_use]
+    pub fn selected_entity(&self) -> Option<u32> {
+        self.selected_entity
     }
 
     /// Toggle debug mode (F12)
@@ -447,19 +574,106 @@ impl DebugOverlay {
             });
     }
 
-    /// Render ECS inspector panel (stub for now)
+    /// Render ECS inspector panel
     fn render_ecs_inspector(&mut self, ctx: &Context) {
         Window::new("🔍 ECS Inspector")
-            .default_size([350.0, 400.0])
+            .default_size([380.0, 450.0])
             .show(ctx, |ui| {
-                ui.label("ECS Inspector - Coming Soon");
+                // Stats header
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("Entities: {}", self.ecs_data.entity_count)).strong());
+                    ui.separator();
+                    ui.label(format!("Components: {}", self.ecs_data.component_count));
+                });
                 ui.separator();
-                ui.label("Will display:");
-                ui.label("• Entity count");
-                ui.label("• Component types");
-                ui.label("• Entity details");
-                ui.label("• Resource list");
+
+                // Two-column layout: entity list on left, details on right
+                ui.horizontal(|ui| {
+                    // Entity list (left panel)
+                    ui.vertical(|ui| {
+                        ui.set_min_width(140.0);
+                        ui.heading("Entities");
+
+                        egui::ScrollArea::vertical()
+                            .max_height(350.0)
+                            .id_source("entity_list")
+                            .show(ui, |ui| {
+                                for entity in &self.ecs_data.entities {
+                                    let is_selected = self.selected_entity == Some(entity.id);
+                                    let label = format!("[{}] {}", entity.id, entity.name);
+
+                                    if ui.selectable_label(is_selected, &label).clicked() {
+                                        self.selected_entity = Some(entity.id);
+                                    }
+                                }
+                            });
+                    });
+
+                    ui.separator();
+
+                    // Entity details (right panel)
+                    ui.vertical(|ui| {
+                        ui.set_min_width(200.0);
+
+                        if let Some(selected_id) = self.selected_entity {
+                            if let Some(entity) = self.ecs_data.entities.iter().find(|e| e.id == selected_id) {
+                                ui.heading(format!("{} (ID: {})", entity.name, entity.id));
+                                ui.separator();
+
+                                egui::ScrollArea::vertical()
+                                    .max_height(320.0)
+                                    .id_source("component_list")
+                                    .show(ui, |ui| {
+                                        for component in &entity.components {
+                                            ui.collapsing(&component.name, |ui| {
+                                                self.render_component_value(ui, &component.value);
+                                            });
+                                        }
+                                    });
+                            } else {
+                                ui.label("Entity not found");
+                                self.selected_entity = None;
+                            }
+                        } else {
+                            ui.label("Select an entity to view details");
+                        }
+                    });
+                });
             });
+    }
+
+    /// Render a component value in the inspector
+    fn render_component_value(&self, ui: &mut egui::Ui, value: &ComponentValue) {
+        match value {
+            ComponentValue::Vec2 { x, y } => {
+                ui.horizontal(|ui| {
+                    ui.label("x:");
+                    ui.label(format!("{:.2}", x));
+                    ui.label("y:");
+                    ui.label(format!("{:.2}", y));
+                });
+            }
+            ComponentValue::Size { width, height } => {
+                ui.horizontal(|ui| {
+                    ui.label("w:");
+                    ui.label(format!("{:.1}", width));
+                    ui.label("h:");
+                    ui.label(format!("{:.1}", height));
+                });
+            }
+            ComponentValue::Float(v) => {
+                ui.label(format!("{:.3}", v));
+            }
+            ComponentValue::Int(v) => {
+                ui.label(format!("{}", v));
+            }
+            ComponentValue::Bool(v) => {
+                ui.label(if *v { "true" } else { "false" });
+            }
+            ComponentValue::String(s) => {
+                ui.label(s);
+            }
+        }
     }
 
     /// Render collision panel

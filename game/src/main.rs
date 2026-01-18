@@ -419,6 +419,75 @@ impl App for Game {
             }
         }
 
+        // Populate ECS inspector data when panel is visible
+        #[cfg(feature = "debug-tools")]
+        if self.debug_overlay.panels.show_ecs_inspector {
+            self.debug_overlay.clear_ecs_data();
+
+            // Count entities and components
+            let mut entity_count = 0;
+            let mut component_count = 0;
+
+            // Collect entity data
+            for (entity, pos) in self.world.query::<Position>() {
+                entity_count += 1;
+
+                let name = if Some(entity) == self.player_entity {
+                    "Player"
+                } else {
+                    "Entity"
+                };
+
+                let mut entity_info = engine_debug::EntityInfo::new(entity.index, name);
+
+                // Add Position component
+                entity_info.add_component(engine_debug::ComponentInfo::vec2(
+                    "Position",
+                    pos.current.x,
+                    pos.current.y,
+                    false,
+                ));
+                component_count += 1;
+
+                // Add Velocity if present
+                if let Some(vel) = self.world.get::<Velocity>(entity) {
+                    entity_info.add_component(engine_debug::ComponentInfo::vec2(
+                        "Velocity",
+                        vel.x,
+                        vel.y,
+                        false,
+                    ));
+                    component_count += 1;
+                }
+
+                // Add Collider if present
+                if let Some(collider) = self.world.get::<Collider>(entity) {
+                    let half = collider.half_size();
+                    entity_info.add_component(engine_debug::ComponentInfo::size(
+                        "Collider",
+                        half.x * 2.0,
+                        half.y * 2.0,
+                    ));
+                    component_count += 1;
+                }
+
+                // Add SpriteRender if present
+                if let Some(sprite) = self.world.get::<SpriteRender>(entity) {
+                    let size = sprite.size();
+                    entity_info.add_component(engine_debug::ComponentInfo::size(
+                        "SpriteRender",
+                        size.x,
+                        size.y,
+                    ));
+                    component_count += 1;
+                }
+
+                self.debug_overlay.add_entity(entity_info);
+            }
+
+            self.debug_overlay.set_ecs_stats(entity_count, component_count);
+        }
+
         if let Some(renderer) = &mut self.renderer {
             // Apply camera
             if let Some(camera) = self.world.get_resource::<Camera2D>() {
