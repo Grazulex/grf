@@ -17,7 +17,7 @@ mod overlay;
 #[cfg(feature = "debug-tools")]
 pub use egui_renderer::EguiRenderer;
 #[cfg(feature = "debug-tools")]
-pub use overlay::{DebugOverlay, PanelState, DebugBox, CollisionDebugData};
+pub use overlay::{DebugOverlay, PanelState, DebugBox, CollisionDebugData, ZOrderLabel, LayerInfo, ZOrderDebugData};
 #[cfg(feature = "debug-tools")]
 pub use egui::Color32 as DebugColor;
 

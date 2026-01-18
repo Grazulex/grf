@@ -55,6 +55,58 @@ pub struct CollisionDebugData {
     pub screen_size: (f32, f32),
 }
 
+/// A z-order label to display on an entity
+#[derive(Debug, Clone)]
+pub struct ZOrderLabel {
+    /// World-space position (center of entity)
+    pub position: Vec2,
+    /// Z-order value (typically Y position for y-sorting)
+    pub z_order: f32,
+    /// Entity name/type for display
+    pub label: String,
+    /// Color for the label
+    pub color: Color32,
+}
+
+impl ZOrderLabel {
+    /// Create a new z-order label
+    #[must_use]
+    pub fn new(position: Vec2, z_order: f32, label: impl Into<String>, color: Color32) -> Self {
+        Self {
+            position,
+            z_order,
+            label: label.into(),
+            color,
+        }
+    }
+}
+
+/// Layer information for the legend
+#[derive(Debug, Clone)]
+pub struct LayerInfo {
+    /// Layer index
+    pub index: usize,
+    /// Layer name
+    pub name: String,
+    /// Color for display
+    pub color: Color32,
+    /// Number of items in this layer
+    pub count: usize,
+}
+
+/// Z-order debug data for rendering
+#[derive(Debug, Default)]
+pub struct ZOrderDebugData {
+    /// Entity z-order labels
+    pub labels: Vec<ZOrderLabel>,
+    /// Layer information for legend
+    pub layers: Vec<LayerInfo>,
+    /// Camera view matrix for world-to-screen conversion
+    pub view_matrix: Mat4,
+    /// Screen size
+    pub screen_size: (f32, f32),
+}
+
 /// Panel visibility state
 #[derive(Debug, Default)]
 pub struct PanelState {
@@ -64,6 +116,8 @@ pub struct PanelState {
     pub show_ecs_inspector: bool,
     /// Show collision overlay settings
     pub show_collision: bool,
+    /// Show z-order/layer legend
+    pub show_zorder: bool,
     /// Show event log
     pub show_event_log: bool,
     /// Show debug console
@@ -86,6 +140,8 @@ pub struct DebugOverlay {
     console_output: Vec<String>,
     /// Collision debug data
     collision_data: CollisionDebugData,
+    /// Z-order debug data
+    zorder_data: ZOrderDebugData,
 }
 
 impl Default for DebugOverlay {
@@ -109,6 +165,7 @@ impl DebugOverlay {
                 "Type 'help' for available commands.".to_string(),
             ],
             collision_data: CollisionDebugData::default(),
+            zorder_data: ZOrderDebugData::default(),
         }
     }
 
@@ -136,6 +193,35 @@ impl DebugOverlay {
         self.collision_data.tile_boxes.push(
             DebugBox::new(min, max, Color32::from_rgba_unmultiplied(255, 165, 0, 100))
         );
+    }
+
+    /// Check if z-order visualization should be rendered
+    #[must_use]
+    pub fn should_show_zorder(&self) -> bool {
+        self.config.enabled && self.config.show_z_order
+    }
+
+    /// Update z-order debug data
+    pub fn set_zorder_data(&mut self, view_matrix: Mat4, screen_size: (f32, f32)) {
+        self.zorder_data.view_matrix = view_matrix;
+        self.zorder_data.screen_size = screen_size;
+        self.zorder_data.labels.clear();
+        self.zorder_data.layers.clear();
+    }
+
+    /// Add a z-order label for an entity
+    pub fn add_zorder_label(&mut self, position: Vec2, z_order: f32, label: impl Into<String>, color: Color32) {
+        self.zorder_data.labels.push(ZOrderLabel::new(position, z_order, label, color));
+    }
+
+    /// Add layer info for the legend
+    pub fn add_layer_info(&mut self, index: usize, name: impl Into<String>, color: Color32, count: usize) {
+        self.zorder_data.layers.push(LayerInfo {
+            index,
+            name: name.into(),
+            color,
+            count,
+        });
     }
 
     /// Toggle debug mode (F12)
@@ -178,6 +264,11 @@ impl DebugOverlay {
             self.render_collision_boxes(ctx);
         }
 
+        // Render z-order labels in world space (before UI panels)
+        if self.config.show_z_order {
+            self.render_zorder_labels(ctx);
+        }
+
         // Main debug menu bar
         self.render_menu_bar(ctx);
 
@@ -192,6 +283,10 @@ impl DebugOverlay {
 
         if self.panels.show_collision {
             self.render_collision_panel(ctx);
+        }
+
+        if self.panels.show_zorder {
+            self.render_layer_legend(ctx);
         }
 
         if self.panels.show_event_log {
@@ -286,6 +381,7 @@ impl DebugOverlay {
                 ui.toggle_value(&mut self.panels.show_performance, "📊 Performance");
                 ui.toggle_value(&mut self.panels.show_ecs_inspector, "🔍 ECS");
                 ui.toggle_value(&mut self.panels.show_collision, "📦 Collision");
+                ui.toggle_value(&mut self.panels.show_zorder, "📐 Z-Order");
                 ui.toggle_value(&mut self.panels.show_event_log, "📜 Events");
                 ui.toggle_value(&mut self.panels.show_console, "💻 Console");
 
@@ -374,6 +470,99 @@ impl DebugOverlay {
                 ui.checkbox(&mut self.config.show_collisions, "Show Collision Boxes (Ctrl+C)");
                 ui.checkbox(&mut self.config.show_z_order, "Show Z-Order Labels (Ctrl+Z)");
                 ui.checkbox(&mut self.config.show_grid, "Show Tile Grid (Ctrl+G)");
+            });
+    }
+
+    /// Render z-order labels on entities
+    fn render_zorder_labels(&self, ctx: &Context) {
+        let painter = ctx.layer_painter(egui::LayerId::background());
+
+        for label in &self.zorder_data.labels {
+            // Use zorder_data's view matrix for transformation
+            let (screen_w, screen_h) = self.zorder_data.screen_size;
+            let pos4 = self.zorder_data.view_matrix * glam::Vec4::new(label.position.x, label.position.y, 0.0, 1.0);
+            let screen_x = (pos4.x + 1.0) * 0.5 * screen_w;
+            let screen_y = (1.0 - pos4.y) * 0.5 * screen_h;
+            let screen_pos = Pos2::new(screen_x, screen_y);
+
+            // Draw background box for readability
+            let text = format!("{} (z:{:.0})", label.label, label.z_order);
+            let font = egui::FontId::proportional(11.0);
+
+            // Estimate text size (approximate)
+            let text_width = text.len() as f32 * 6.0;
+            let text_height = 14.0;
+            let padding = 2.0;
+
+            let bg_rect = Rect::from_min_size(
+                Pos2::new(screen_pos.x - padding, screen_pos.y - text_height - padding),
+                egui::Vec2::new(text_width + padding * 2.0, text_height + padding * 2.0),
+            );
+
+            painter.rect(
+                bg_rect,
+                2.0,
+                Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                Stroke::NONE,
+            );
+
+            // Draw text
+            painter.text(
+                screen_pos,
+                egui::Align2::LEFT_BOTTOM,
+                &text,
+                font,
+                label.color,
+            );
+        }
+    }
+
+    /// Render layer legend window
+    fn render_layer_legend(&mut self, ctx: &Context) {
+        Window::new("📐 Z-Order / Layers")
+            .default_size([280.0, 200.0])
+            .show(ctx, |ui| {
+                ui.heading("Render Order (bottom to top)");
+                ui.separator();
+
+                // Standard layer descriptions
+                let standard_layers = [
+                    (0, "Ground", Color32::from_rgb(139, 90, 43)),
+                    (1, "Ground Decor", Color32::from_rgb(34, 139, 34)),
+                    (2, "Shadows", Color32::from_rgb(64, 64, 64)),
+                    (3, "Entities (Y-sorted)", Color32::from_rgb(255, 215, 0)),
+                    (4, "Above Entities", Color32::from_rgb(135, 206, 250)),
+                    (5, "Weather/Effects", Color32::from_rgb(255, 255, 255)),
+                ];
+
+                for (z, name, color) in standard_layers {
+                    ui.horizontal(|ui| {
+                        // Color indicator
+                        let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(12.0, 12.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 2.0, color);
+
+                        // Layer info
+                        ui.label(RichText::new(format!("Z{}: {}", z, name)).color(color));
+                    });
+                }
+
+                ui.separator();
+                ui.checkbox(&mut self.config.show_z_order, "Show Z-Order Labels (Ctrl+Z)");
+
+                // Show dynamic layer info if available
+                if !self.zorder_data.layers.is_empty() {
+                    ui.separator();
+                    ui.heading("Current Frame Layers");
+
+                    for layer in &self.zorder_data.layers {
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(12.0, 12.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 2.0, layer.color);
+
+                            ui.label(format!("{}: {} items", layer.name, layer.count));
+                        });
+                    }
+                }
             });
     }
 

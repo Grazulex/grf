@@ -255,6 +255,22 @@ impl App for Game {
                     }
                 );
             }
+
+            // Ctrl+Z toggles z-order labels
+            let toggle_zorder = input
+                .map(|i| i.is_key_pressed(KeyCode::LCtrl) && i.is_key_just_pressed(KeyCode::Z))
+                .unwrap_or(false);
+            if toggle_zorder && self.debug_overlay.is_enabled() {
+                self.debug_overlay.config.show_z_order = !self.debug_overlay.config.show_z_order;
+                info!(
+                    "Z-order labels {}",
+                    if self.debug_overlay.config.show_z_order {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                );
+            }
         }
 
         // Fixed timestep updates
@@ -354,6 +370,51 @@ impl App for Game {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Populate z-order debug data if visualization is enabled
+        #[cfg(feature = "debug-tools")]
+        if self.debug_overlay.should_show_zorder() {
+            if let Some(renderer) = &self.renderer {
+                let size = renderer.size();
+
+                // Get view matrix from camera
+                let view_matrix = self
+                    .world
+                    .get_resource::<Camera2D>()
+                    .map(|c| c.view_matrix())
+                    .unwrap_or(glam::Mat4::IDENTITY);
+
+                // Set z-order data with camera transform
+                self.debug_overlay.set_zorder_data(view_matrix, (size.0 as f32, size.1 as f32));
+
+                // Add entity z-order labels (z = y position for y-sorting)
+                for (entity, pos) in self.world.query::<Position>() {
+                    let z_order = pos.current.y;
+                    let label = if Some(entity) == self.player_entity {
+                        "Player"
+                    } else {
+                        "Entity"
+                    };
+                    let color = if Some(entity) == self.player_entity {
+                        engine_debug::DebugColor::GREEN
+                    } else {
+                        engine_debug::DebugColor::YELLOW
+                    };
+                    self.debug_overlay.add_zorder_label(pos.current, z_order, label, color);
+                }
+
+                // Add layer info for legend
+                if let Some(tilemap) = self.world.get_resource::<Tilemap>() {
+                    let below = tilemap.below_layers().len();
+                    let above = tilemap.above_layers().len();
+                    let entity_count = self.world.query::<Position>().count();
+
+                    self.debug_overlay.add_layer_info(0, "Below Layers", engine_debug::DebugColor::from_rgb(139, 90, 43), below);
+                    self.debug_overlay.add_layer_info(1, "Entities", engine_debug::DebugColor::YELLOW, entity_count);
+                    self.debug_overlay.add_layer_info(2, "Above Layers", engine_debug::DebugColor::from_rgb(135, 206, 250), above);
                 }
             }
         }
