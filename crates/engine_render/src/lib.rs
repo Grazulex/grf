@@ -3,16 +3,20 @@
 //! This crate provides sprite rendering, tilemaps, and camera management
 //! using wgpu for GPU abstraction.
 
+mod animation;
 mod camera;
 mod renderer;
 mod sprite;
 mod texture;
+mod tilemap;
 
+pub use animation::{Animation, AnimationController, AnimationFrame};
 pub use camera::Camera2D;
 pub use glam;
 pub use renderer::Renderer;
 pub use sprite::{Sprite, SpriteBatch, SpriteRegion, SpriteVertex};
 pub use texture::Texture;
+pub use tilemap::{LayerType, SpawnPoint, TileLayer, Tilemap, TilemapError, Tileset, Trigger};
 pub use wgpu;
 
 /// Default clear color (dark blue)

@@ -13,4 +13,6 @@ image = { workspace = true }
 log = { workspace = true }
 winit = { workspace = true }
 bytemuck = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 engine_window = { workspace = true }

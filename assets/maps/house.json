@@ -1,0 +1,62 @@
+{
+  "name": "House Interior",
+  "width": 8,
+  "height": 6,
+  "tile_width": 16,
+  "tile_height": 16,
+  "tilesets": [
+    {
+      "name": "basic",
+      "image": "assets/tilesets/basic.png",
+      "tile_width": 16,
+      "tile_height": 16,
+      "columns": 4,
+      "rows": 4,
+      "first_gid": 1
+    }
+  ],
+  "layers": [
+    {
+      "name": "floor",
+      "width": 8,
+      "height": 6,
+      "visible": true,
+      "opacity": 1.0,
+      "z_order": 0,
+      "layer_type": "below",
+      "data": [
+        4, 4, 4, 4, 4, 4, 4, 4,
+        4, 7, 7, 7, 7, 7, 7, 4,
+        4, 7, 7, 7, 7, 7, 7, 4,
+        4, 7, 7, 7, 7, 7, 7, 4,
+        4, 7, 7, 7, 7, 7, 7, 4,
+        4, 4, 4, 8, 8, 4, 4, 4
+      ]
+    }
+  ],
+  "collision": [
+    true,  true,  true,  true,  true,  true,  true,  true,
+    true,  false, false, false, false, false, false, true,
+    true,  false, false, false, false, false, false, true,
+    true,  false, false, false, false, false, false, true,
+    true,  false, false, false, false, false, false, true,
+    true,  true,  true,  false, false, true,  true,  true
+  ],
+  "spawns": [
+    {
+      "id": "from_outside",
+      "x": 64.0,
+      "y": 80.0
+    }
+  ],
+  "triggers": [
+    {
+      "x": 48.0,
+      "y": 80.0,
+      "width": 32.0,
+      "height": 16.0,
+      "target_map": "assets/maps/test.json",
+      "target_spawn": "from_house"
+    }
+  ]
+}
