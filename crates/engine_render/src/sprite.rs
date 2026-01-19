@@ -103,6 +103,16 @@ impl Sprite {
         }
     }
 
+    /// Create a colored rectangle sprite (uses white texture internally)
+    pub fn colored(position: Vec2, size: Vec2, color: [f32; 4]) -> Self {
+        Self {
+            position,
+            size,
+            color: Vec4::from_array(color),
+            ..Default::default()
+        }
+    }
+
     /// Set the sprite region from pixel coordinates
     pub fn with_region(mut self, x: u32, y: u32, width: u32, height: u32, tex_width: u32, tex_height: u32) -> Self {
         self.region = SpriteRegion::from_pixels(x, y, width, height, tex_width, tex_height);

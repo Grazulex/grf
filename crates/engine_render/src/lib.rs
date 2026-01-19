@@ -16,7 +16,7 @@ pub use animation::{Animation, AnimationController, AnimationFrame};
 pub use camera::Camera2D;
 pub use day_night::{Color, DayNightCycle};
 pub use glam;
-pub use renderer::Renderer;
+pub use renderer::{Frame, Renderer};
 pub use sprite::{Sprite, SpriteBatch, SpriteRegion, SpriteVertex};
 pub use stats::RenderStats;
 pub use texture::Texture;

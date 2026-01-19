@@ -7,6 +7,7 @@ mod dialogue;
 mod farming;
 mod inventory;
 mod items;
+mod menu;
 mod npc;
 mod save;
 mod systems;
@@ -18,7 +19,7 @@ use engine_core::GameTime;
 use engine_ecs::{Entity, World};
 use engine_input::{Input, KeyCode};
 use engine_render::{glam, glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
-use engine_ui::Hud;
+use engine_ui::{Hud, Menu, MenuItem};
 use engine_window::{winit::event::{KeyEvent, WindowEvent}, App, Window, WindowConfig};
 use log::{error, info};
 use winit::window::Window as WinitWindow;
@@ -28,12 +29,17 @@ use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use inventory::Inventory;
+use menu::GameState;
 use save::{GameClockData, PlayerData, SaveData, SaveManager};
 use systems::{camera_system, input_system, movement_system};
 
 /// The main game application
 struct Game {
     game_time: GameTime,
+    /// Current game state (menu, playing, paused)
+    game_state: GameState,
+    /// Main menu (from engine_ui)
+    main_menu: Menu,
     /// ECS World containing all entities and components
     world: World,
     /// Reference to the player entity
@@ -60,6 +66,18 @@ struct Game {
 }
 
 impl Game {
+    /// Create the main menu with standard options
+    fn create_main_menu() -> Menu {
+        let mut menu = Menu::new(Vec2::new(400.0, 300.0)); // Will be repositioned on render
+        menu.set_items(vec![
+            MenuItem::new("new_game", "New Game"),
+            MenuItem::new("load_game", "Load Game"),
+            MenuItem::new("settings", "Settings"),
+            MenuItem::new("quit", "Quit"),
+        ]);
+        menu
+    }
+
     fn new() -> Self {
         let mut world = World::new();
 
@@ -68,6 +86,8 @@ impl Game {
 
         Self {
             game_time: GameTime::new(),
+            game_state: GameState::MainMenu,
+            main_menu: Self::create_main_menu(),
             world,
             player_entity: None,
             renderer: None,
@@ -255,6 +275,67 @@ impl Game {
         info!("Game loaded successfully!");
     }
 
+    /// Update main menu state
+    fn update_main_menu(&mut self) {
+        // Handle menu input
+        let confirmed = {
+            if let Some(input) = self.world.get_resource::<Input>() {
+                if input.is_key_just_pressed(KeyCode::Up) || input.is_key_just_pressed(KeyCode::W) {
+                    self.main_menu.move_up();
+                }
+                if input.is_key_just_pressed(KeyCode::Down) || input.is_key_just_pressed(KeyCode::S) {
+                    self.main_menu.move_down();
+                }
+                input.is_key_just_pressed(KeyCode::Enter) || input.is_key_just_pressed(KeyCode::Space)
+            } else {
+                false
+            }
+        };
+
+        // Handle confirmed selection
+        if confirmed {
+            if let Some(item) = self.main_menu.selected_item() {
+                match item.id.as_str() {
+                    "new_game" => {
+                        info!("Starting new game...");
+                        self.start_new_game();
+                    }
+                    "load_game" => {
+                        info!("Loading game...");
+                        self.load_game();
+                        self.game_state = GameState::Playing;
+                    }
+                    "settings" => {
+                        // TODO: Task #038 will implement settings menu
+                        info!("Settings not yet implemented");
+                    }
+                    "quit" => {
+                        info!("Goodbye!");
+                        std::process::exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Start a new game
+    fn start_new_game(&mut self) {
+        // Reset game clock
+        self.world.insert_resource(engine_core::GameClock::new());
+
+        // Reset inventory
+        self.world.insert_resource(Inventory::default());
+
+        // Load the starting map
+        self.load_map("assets/maps/test.json", "default");
+
+        // Switch to playing state
+        self.game_state = GameState::Playing;
+
+        info!("New game started!");
+    }
+
     /// Process pending console commands
     #[cfg(feature = "debug-tools")]
     fn process_console_commands(&mut self) {
@@ -431,14 +512,32 @@ impl App for Game {
     fn update(&mut self) {
         self.game_time.update();
 
-        // Check for escape to quit
+        // Handle state-specific updates
+        match self.game_state {
+            GameState::MainMenu => {
+                self.update_main_menu();
+                return;
+            }
+            GameState::Paused => {
+                // TODO: Handle pause menu in task #037
+                return;
+            }
+            GameState::Playing => {
+                // Continue with game logic below
+            }
+        }
+
+        // === Playing state logic ===
+
+        // Check for escape to pause/quit
         {
-            let should_quit = self
+            let escape_pressed = self
                 .world
                 .get_resource::<Input>()
                 .map(|i| i.is_key_just_pressed(KeyCode::Escape))
                 .unwrap_or(false);
-            if should_quit {
+            if escape_pressed {
+                // For now, quit. Task #037 will add pause menu
                 std::process::exit(0);
             }
         }
@@ -750,69 +849,87 @@ impl App for Game {
         }
 
         if let Some(renderer) = &mut self.renderer {
-            // Apply camera
-            if let Some(camera) = self.world.get_resource::<Camera2D>() {
-                renderer.set_camera(camera);
+            // Apply camera (only for gameplay)
+            if self.game_state == GameState::Playing {
+                if let Some(camera) = self.world.get_resource::<Camera2D>() {
+                    renderer.set_camera(camera);
+                }
             }
 
             match renderer.begin_frame() {
                 Ok(mut frame) => {
-                    // Get camera and tilemap for rendering
-                    let camera_ptr = self
-                        .world
-                        .get_resource::<Camera2D>()
-                        .map(|c| c as *const Camera2D);
-                    let tilemap_ptr = self
-                        .world
-                        .get_resource::<Tilemap>()
-                        .map(|t| t as *const Tilemap);
-
-                    if let (Some(tm_ptr), Some(cam_ptr)) = (tilemap_ptr, camera_ptr) {
-                        // Safety: we're only reading, and these are borrowed from world
-                        let tilemap = unsafe { &*tm_ptr };
-                        let camera = unsafe { &*cam_ptr };
-
-                        // 1. Render layers BELOW entities (ground, decorations)
-                        for layer_idx in tilemap.below_layers() {
-                            let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                            for (sprite, _tileset_idx) in sprites {
+                    // Render based on game state
+                    match self.game_state {
+                        GameState::MainMenu => {
+                            // Render main menu using engine_ui sprites
+                            let size = renderer.size();
+                            let menu_sprites = self.main_menu.sprites((size.0 as f32, size.1 as f32));
+                            renderer.set_screen_space();
+                            for sprite in menu_sprites {
                                 renderer.draw_sprite(&sprite);
                             }
+                            renderer.flush_sprites(&mut frame, None);
+                            renderer.set_world_space();
                         }
+                        GameState::Playing | GameState::Paused => {
+                            // Get camera and tilemap for rendering
+                            let camera_ptr = self
+                                .world
+                                .get_resource::<Camera2D>()
+                                .map(|c| c as *const Camera2D);
+                            let tilemap_ptr = self
+                                .world
+                                .get_resource::<Tilemap>()
+                                .map(|t| t as *const Tilemap);
 
-                        // 2. Render player entity (same batch as tiles for now)
-                        let alpha = self.game_time.alpha() as f32;
-                        for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
-                            if let Some(pos) = self.world.get::<Position>(entity) {
-                                let render_pos = pos.interpolated(alpha);
-                                // Use 16x16 tile size to match tileset
-                                let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
-                                // Use tile at (32, 0) = yellow tile as player placeholder
-                                sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
-                                renderer.draw_sprite(&sprite);
+                            if let (Some(tm_ptr), Some(cam_ptr)) = (tilemap_ptr, camera_ptr) {
+                                // Safety: we're only reading, and these are borrowed from world
+                                let tilemap = unsafe { &*tm_ptr };
+                                let camera = unsafe { &*cam_ptr };
+
+                                // 1. Render layers BELOW entities (ground, decorations)
+                                for layer_idx in tilemap.below_layers() {
+                                    let sprites = tilemap.get_visible_sprites(layer_idx, camera);
+                                    for (sprite, _tileset_idx) in sprites {
+                                        renderer.draw_sprite(&sprite);
+                                    }
+                                }
+
+                                // 2. Render player entity (same batch as tiles for now)
+                                let alpha = self.game_time.alpha() as f32;
+                                for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
+                                    if let Some(pos) = self.world.get::<Position>(entity) {
+                                        let render_pos = pos.interpolated(alpha);
+                                        // Use 16x16 tile size to match tileset
+                                        let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
+                                        // Use tile at (32, 0) = yellow tile as player placeholder
+                                        sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
+                                        renderer.draw_sprite(&sprite);
+                                    }
+                                }
+
+                                // 3. Render layers ABOVE entities (tree tops, roofs)
+                                for layer_idx in tilemap.above_layers() {
+                                    let sprites = tilemap.get_visible_sprites(layer_idx, camera);
+                                    for (sprite, _tileset_idx) in sprites {
+                                        renderer.draw_sprite(&sprite);
+                                    }
+                                }
+                            }
+
+                            // Flush all world sprites (tiles + player)
+                            renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
+
+                            // Render HUD in screen-space (on top of world, no clear)
+                            if let Some(hud) = &self.hud {
+                                renderer.set_screen_space();
+                                for sprite in hud.sprites() {
+                                    renderer.draw_sprite(&sprite);
+                                }
+                                renderer.flush_sprites_no_clear(&mut frame, None);
+                                renderer.set_world_space();
                             }
                         }
-
-                        // 3. Render layers ABOVE entities (tree tops, roofs)
-                        for layer_idx in tilemap.above_layers() {
-                            let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                            for (sprite, _tileset_idx) in sprites {
-                                renderer.draw_sprite(&sprite);
-                            }
-                        }
-                    }
-
-                    // Flush all world sprites (tiles + player)
-                    renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
-
-                    // Render HUD in screen-space (on top of world, no clear)
-                    if let Some(hud) = &self.hud {
-                        renderer.set_screen_space();
-                        for sprite in hud.sprites() {
-                            renderer.draw_sprite(&sprite);
-                        }
-                        renderer.flush_sprites_no_clear(&mut frame, None);
-                        renderer.set_world_space();
                     }
 
                     // Update render stats for profiler
