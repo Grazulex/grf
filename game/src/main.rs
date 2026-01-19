@@ -56,9 +56,8 @@ struct Game {
     player_entity: Option<Entity>,
     // Renderer (not in ECS as it needs special handling)
     renderer: Option<Renderer>,
-    // Textures and bind groups
-    tileset_texture: Option<Texture>,
-    tileset_bind_group: Option<wgpu::BindGroup>,
+    // Tileset textures and bind groups (one per tileset, indexed by tileset order)
+    tileset_textures: Vec<(Texture, wgpu::BindGroup)>,
     // Player animation (loaded from config)
     player_animator: Option<CharacterAnimator>,
     // Player textures keyed by sheet name (idle, walk, run)
@@ -131,8 +130,7 @@ impl Game {
             world,
             player_entity: None,
             renderer: None,
-            tileset_texture: None,
-            tileset_bind_group: None,
+            tileset_textures: Vec::new(),
             player_animator: None,
             player_textures: std::collections::HashMap::new(),
             window: None,
@@ -160,16 +158,17 @@ impl Game {
                     .map(|s| s.position())
                     .unwrap_or_else(|| tilemap.default_spawn());
 
-                // Load tileset texture (if different from current)
-                if let Some(tileset) = tilemap.tilesets.first() {
+                // Load ALL tileset textures
+                self.tileset_textures.clear();
+                for (idx, tileset) in tilemap.tilesets.iter().enumerate() {
                     match renderer.load_texture(&tileset.image) {
                         Ok(texture) => {
                             let bind_group = renderer.create_texture_bind_group(&texture);
-                            self.tileset_texture = Some(texture);
-                            self.tileset_bind_group = Some(bind_group);
+                            info!("Tileset {} loaded: {} (firstgid={})", idx, tileset.name, tileset.first_gid);
+                            self.tileset_textures.push((texture, bind_group));
                         }
                         Err(e) => {
-                            error!("Failed to load tileset texture: {}", e);
+                            error!("Failed to load tileset {}: {}", tileset.name, e);
                         }
                     }
                 }
@@ -604,12 +603,18 @@ impl App for Game {
         // Load tilemap (Tiled export)
         let player_start = match Tilemap::load("game/assets/Tilesets/test.json") {
             Ok(tilemap) => {
-                // Load tileset texture
-                if let Some(tileset) = tilemap.tilesets.first() {
-                    if let Ok(texture) = renderer.load_texture(&tileset.image) {
-                        let bind_group = renderer.create_texture_bind_group(&texture);
-                        self.tileset_texture = Some(texture);
-                        self.tileset_bind_group = Some(bind_group);
+                // Load ALL tileset textures
+                self.tileset_textures.clear();
+                for (idx, tileset) in tilemap.tilesets.iter().enumerate() {
+                    match renderer.load_texture(&tileset.image) {
+                        Ok(texture) => {
+                            let bind_group = renderer.create_texture_bind_group(&texture);
+                            info!("Tileset {} loaded: {} (firstgid={})", idx, tileset.name, tileset.first_gid);
+                            self.tileset_textures.push((texture, bind_group));
+                        }
+                        Err(e) => {
+                            error!("Failed to load tileset {}: {}", tileset.name, e);
+                        }
                     }
                 }
 
@@ -1136,15 +1141,31 @@ impl App for Game {
                                 let camera = unsafe { &*cam_ptr };
 
                                 // 1. Render layers BELOW entities (ground, decorations)
+                                // Group sprites by tileset for proper batching
+                                let mut sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
                                 for layer_idx in tilemap.below_layers() {
                                     let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                                    for (sprite, _tileset_idx) in sprites {
-                                        renderer.draw_sprite(&sprite);
+                                    for (sprite, tileset_idx) in sprites {
+                                        sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
                                     }
                                 }
 
-                                // Flush below layers
-                                renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
+                                // Render each tileset batch with its correct texture
+                                let mut first_flush = true;
+                                for tileset_idx in 0..self.tileset_textures.len() {
+                                    if let Some(sprites) = sprites_by_tileset.get(&tileset_idx) {
+                                        for sprite in sprites {
+                                            renderer.draw_sprite(sprite);
+                                        }
+                                        let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
+                                        if first_flush {
+                                            renderer.flush_sprites(&mut frame, bind_group);
+                                            first_flush = false;
+                                        } else {
+                                            renderer.flush_sprites_no_clear(&mut frame, bind_group);
+                                        }
+                                    }
+                                }
 
                                 // 2. Render player with animation texture in SEPARATE batch
                                 if let Some(animator) = &self.player_animator {
@@ -1180,15 +1201,25 @@ impl App for Game {
                                 }
 
                                 // 3. Render layers ABOVE entities
+                                // Group sprites by tileset for proper batching
+                                let mut above_sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
                                 for layer_idx in tilemap.above_layers() {
                                     let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                                    for (sprite, _tileset_idx) in sprites {
-                                        renderer.draw_sprite(&sprite);
+                                    for (sprite, tileset_idx) in sprites {
+                                        above_sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
                                     }
                                 }
 
-                                // Flush above layers
-                                renderer.flush_sprites_no_clear(&mut frame, self.tileset_bind_group.as_ref());
+                                // Render each tileset batch with its correct texture
+                                for tileset_idx in 0..self.tileset_textures.len() {
+                                    if let Some(sprites) = above_sprites_by_tileset.get(&tileset_idx) {
+                                        for sprite in sprites {
+                                            renderer.draw_sprite(sprite);
+                                        }
+                                        let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
+                                        renderer.flush_sprites_no_clear(&mut frame, bind_group);
+                                    }
+                                }
                             }
 
                             // Render HUD in screen-space (on top of world, no clear)
@@ -1243,7 +1274,9 @@ impl App for Game {
                         );
                     }
 
-                    renderer.end_frame(frame, self.tileset_bind_group.as_ref());
+                    // Use first tileset as fallback for end_frame
+                    let fallback_bind_group = self.tileset_textures.first().map(|(_, bg)| bg);
+                    renderer.end_frame(frame, fallback_bind_group);
                 }
                 Err(wgpu::SurfaceError::Lost) => {
                     let size = renderer.size();

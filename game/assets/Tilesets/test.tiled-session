@@ -3,10 +3,34 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "",
+    "activeFile": "test.tmx",
     "expandedProjectPaths": [
+        "."
     ],
     "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        "Tileset Grass Summer.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "summer.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1.5
+        },
+        "test.tmx": {
+            "expandedGroupLayers": [
+                3,
+                4
+            ],
+            "scale": 1.62390625,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 317.13653420571535,
+                "y": 224.15087077840855
+            }
+        }
     },
     "last.exportedFilePath": "/home/jean-marc-strauven/Game/grf/game/assets/Tilesets",
     "last.imagePath": "/home/jean-marc-strauven/Game/grf/game/assets/Farm/Tileset/Modular",
@@ -17,10 +41,15 @@
     "map.tileWidth": 16,
     "map.width": 40,
     "openFiles": [
+        "test.tmx",
+        "summer.tsx"
     ],
     "project": "test.tiled-project",
     "property.type": "int",
     "recentFiles": [
+        "test.tmx",
+        "Tileset Grass Summer.tsx",
+        "summer.tsx"
     ],
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
