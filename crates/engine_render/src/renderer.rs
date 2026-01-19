@@ -219,6 +219,21 @@ impl Renderer {
     /// Flush sprites to the frame (call before overlay rendering)
     /// This clears the screen and renders all batched sprites
     pub fn flush_sprites(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
+        self.flush_sprites_internal(frame, texture_bind_group, true);
+    }
+
+    /// Flush sprites without clearing the screen (for UI layers on top of world)
+    pub fn flush_sprites_no_clear(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
+        self.flush_sprites_internal(frame, texture_bind_group, false);
+    }
+
+    /// Get the white texture bind group for solid color rendering
+    pub fn white_bind_group(&self) -> &wgpu::BindGroup {
+        &self.white_bind_group
+    }
+
+    /// Internal flush implementation
+    fn flush_sprites_internal(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>, clear: bool) {
         // Use white texture if none provided
         let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
 
@@ -230,13 +245,19 @@ impl Renderer {
         }
 
         {
+            let load_op = if clear {
+                wgpu::LoadOp::Clear(CLEAR_COLOR)
+            } else {
+                wgpu::LoadOp::Load
+            };
+
             let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Sprite Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                        load: load_op,
                         store: wgpu::StoreOp::Store,
                     },
                 })],

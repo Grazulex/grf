@@ -646,16 +646,17 @@ impl App for Game {
                         }
                     }
 
-                    // Flush world sprites before UI rendering
+                    // Flush world sprites (clears screen and renders world)
                     renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
-                    // Render HUD in screen-space
+                    // Render HUD in screen-space (on top of world, no clear)
                     if let Some(hud) = &self.hud {
                         renderer.set_screen_space();
                         for sprite in hud.sprites() {
                             renderer.draw_sprite(&sprite);
                         }
-                        // Note: HUD sprites will be drawn in end_frame with white texture
+                        // Flush HUD with white texture (None = white), no clear to preserve world
+                        renderer.flush_sprites_no_clear(&mut frame, None);
                     }
 
                     // Update render stats for profiler
