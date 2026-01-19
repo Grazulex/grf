@@ -15,3 +15,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Local cache
+cache.sqlite
+*.sqlite
