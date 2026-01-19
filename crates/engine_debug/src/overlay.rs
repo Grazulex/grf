@@ -204,6 +204,23 @@ impl EventLogFilter {
     }
 }
 
+/// Console command that requires game-side execution
+#[derive(Debug, Clone)]
+pub enum ConsoleCommand {
+    /// Teleport player to position
+    Teleport { x: f32, y: f32 },
+    /// Set player movement speed
+    SetSpeed(f32),
+    /// Set game timescale
+    SetTimescale(f32),
+    /// Request player position (response via console output)
+    GetPosition,
+    /// Request entity list
+    ListEntities,
+    /// Request render stats
+    ShowStats,
+}
+
 /// Component value for display/editing
 #[derive(Debug, Clone)]
 pub enum ComponentValue {
@@ -370,6 +387,12 @@ pub struct DebugOverlay {
     event_filter: EventLogFilter,
     /// Auto-scroll to bottom
     event_log_auto_scroll: bool,
+    /// Pending console commands for game execution
+    pending_commands: Vec<ConsoleCommand>,
+    /// Command history for up/down navigation
+    command_history: Vec<String>,
+    /// Current position in command history
+    history_index: Option<usize>,
 }
 
 impl Default for DebugOverlay {
@@ -403,7 +426,20 @@ impl DebugOverlay {
             event_log: Vec::with_capacity(MAX_EVENT_LOG_ENTRIES),
             event_filter: EventLogFilter::default(),
             event_log_auto_scroll: true,
+            pending_commands: Vec::new(),
+            command_history: Vec::new(),
+            history_index: None,
         }
+    }
+
+    /// Take pending commands for game execution (drains the queue)
+    pub fn take_pending_commands(&mut self) -> Vec<ConsoleCommand> {
+        std::mem::take(&mut self.pending_commands)
+    }
+
+    /// Add a response line to the console output
+    pub fn console_print(&mut self, message: impl Into<String>) {
+        self.console_output.push(message.into());
     }
 
     /// Log an event to the event log
@@ -1240,34 +1276,156 @@ impl DebugOverlay {
             return;
         }
 
+        // Add to history
+        if self.command_history.last() != Some(&command) {
+            self.command_history.push(command.clone());
+            if self.command_history.len() > 50 {
+                self.command_history.remove(0);
+            }
+        }
+        self.history_index = None;
+
         self.console_output.push(format!("> {}", command));
 
-        // Basic command handling
-        match command.as_str() {
-            "help" => {
+        // Parse command and arguments
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.is_empty() {
+            self.console_input.clear();
+            return;
+        }
+
+        let cmd = parts[0].to_lowercase();
+        let args = &parts[1..];
+
+        match cmd.as_str() {
+            "help" | "?" => {
                 self.console_output.push("Available commands:".to_string());
-                self.console_output.push("  help - Show this help".to_string());
-                self.console_output.push("  clear - Clear console".to_string());
-                self.console_output.push("  fps - Show current FPS".to_string());
+                self.console_output.push("  help          - Show this help".to_string());
+                self.console_output.push("  clear         - Clear console".to_string());
+                self.console_output.push("  fps           - Show current FPS".to_string());
+                self.console_output.push("  stats         - Show render stats".to_string());
+                self.console_output.push("  pos           - Show player position".to_string());
+                self.console_output.push("  tp <x> <y>    - Teleport player".to_string());
+                self.console_output.push("  speed <val>   - Set player speed".to_string());
+                self.console_output.push("  timescale <v> - Set game speed (0.1-10)".to_string());
+                self.console_output.push("  entities      - List all entities".to_string());
                 self.console_output.push("  collision on/off - Toggle collision boxes".to_string());
+                self.console_output.push("  zorder on/off - Toggle z-order labels".to_string());
             }
-            "clear" => {
+            "clear" | "cls" => {
                 self.console_output.clear();
             }
             "fps" => {
                 let fps = self.fps_history.last().copied().unwrap_or(0.0);
-                self.console_output.push(format!("Current FPS: {:.1}", fps));
+                let avg = if !self.fps_history.is_empty() {
+                    self.fps_history.iter().sum::<f32>() / self.fps_history.len() as f32
+                } else {
+                    0.0
+                };
+                self.console_output.push(format!("FPS: {:.1} (avg: {:.1})", fps, avg));
             }
-            "collision on" => {
-                self.config.show_collisions = true;
-                self.console_output.push("Collision boxes enabled".to_string());
+            "stats" => {
+                self.pending_commands.push(ConsoleCommand::ShowStats);
             }
-            "collision off" => {
-                self.config.show_collisions = false;
-                self.console_output.push("Collision boxes disabled".to_string());
+            "pos" | "position" => {
+                self.pending_commands.push(ConsoleCommand::GetPosition);
+            }
+            "tp" | "teleport" => {
+                if args.len() >= 2 {
+                    match (args[0].parse::<f32>(), args[1].parse::<f32>()) {
+                        (Ok(x), Ok(y)) => {
+                            self.pending_commands.push(ConsoleCommand::Teleport { x, y });
+                            self.console_output.push(format!("Teleporting to ({}, {})", x, y));
+                        }
+                        _ => {
+                            self.console_output.push("Usage: tp <x> <y>".to_string());
+                        }
+                    }
+                } else {
+                    self.console_output.push("Usage: tp <x> <y>".to_string());
+                }
+            }
+            "speed" => {
+                if let Some(val) = args.first() {
+                    if let Ok(speed) = val.parse::<f32>() {
+                        if speed > 0.0 && speed <= 2000.0 {
+                            self.pending_commands.push(ConsoleCommand::SetSpeed(speed));
+                            self.console_output.push(format!("Speed set to {}", speed));
+                        } else {
+                            self.console_output.push("Speed must be between 0 and 2000".to_string());
+                        }
+                    } else {
+                        self.console_output.push("Usage: speed <value>".to_string());
+                    }
+                } else {
+                    self.console_output.push("Usage: speed <value>".to_string());
+                }
+            }
+            "timescale" | "ts" => {
+                if let Some(val) = args.first() {
+                    if let Ok(scale) = val.parse::<f32>() {
+                        if scale >= 0.1 && scale <= 10.0 {
+                            self.pending_commands.push(ConsoleCommand::SetTimescale(scale));
+                            self.console_output.push(format!("Timescale set to {}", scale));
+                        } else {
+                            self.console_output.push("Timescale must be between 0.1 and 10".to_string());
+                        }
+                    } else {
+                        self.console_output.push("Usage: timescale <value>".to_string());
+                    }
+                } else {
+                    self.console_output.push("Usage: timescale <value>".to_string());
+                }
+            }
+            "entities" | "ents" => {
+                self.pending_commands.push(ConsoleCommand::ListEntities);
+            }
+            "collision" | "col" => {
+                if let Some(state) = args.first() {
+                    match *state {
+                        "on" | "1" | "true" => {
+                            self.config.show_collisions = true;
+                            self.console_output.push("Collision boxes enabled".to_string());
+                        }
+                        "off" | "0" | "false" => {
+                            self.config.show_collisions = false;
+                            self.console_output.push("Collision boxes disabled".to_string());
+                        }
+                        _ => {
+                            self.console_output.push("Usage: collision on/off".to_string());
+                        }
+                    }
+                } else {
+                    // Toggle
+                    self.config.show_collisions = !self.config.show_collisions;
+                    let state = if self.config.show_collisions { "enabled" } else { "disabled" };
+                    self.console_output.push(format!("Collision boxes {}", state));
+                }
+            }
+            "zorder" | "zo" => {
+                if let Some(state) = args.first() {
+                    match *state {
+                        "on" | "1" | "true" => {
+                            self.config.show_z_order = true;
+                            self.console_output.push("Z-order labels enabled".to_string());
+                        }
+                        "off" | "0" | "false" => {
+                            self.config.show_z_order = false;
+                            self.console_output.push("Z-order labels disabled".to_string());
+                        }
+                        _ => {
+                            self.console_output.push("Usage: zorder on/off".to_string());
+                        }
+                    }
+                } else {
+                    // Toggle
+                    self.config.show_z_order = !self.config.show_z_order;
+                    let state = if self.config.show_z_order { "enabled" } else { "disabled" };
+                    self.console_output.push(format!("Z-order labels {}", state));
+                }
             }
             _ => {
-                self.console_output.push(format!("Unknown command: {}", command));
+                self.console_output.push(format!("Unknown command: {}. Type 'help' for commands.", cmd));
             }
         }
 

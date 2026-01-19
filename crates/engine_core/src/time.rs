@@ -31,6 +31,8 @@ pub struct GameTime {
     current_fps: f64,
     /// Smoothed UPS (updated every second)
     current_ups: f64,
+    /// Time scale multiplier (1.0 = normal speed)
+    time_scale: f64,
 }
 
 impl Default for GameTime {
@@ -55,6 +57,7 @@ impl GameTime {
             ups_update_count: 0,
             current_fps: 0.0,
             current_ups: 0.0,
+            time_scale: 1.0,
         }
     }
 
@@ -69,11 +72,14 @@ impl GameTime {
             self.delta = MAX_DELTA;
         }
 
-        self.total += self.delta;
-        self.frame_count += 1;
-        self.accumulator += self.delta;
+        // Apply time scale to game time
+        let scaled_delta = self.delta * self.time_scale;
 
-        // Track FPS
+        self.total += scaled_delta;
+        self.frame_count += 1;
+        self.accumulator += scaled_delta;
+
+        // Track FPS (use real delta, not scaled)
         self.fps_frame_count += 1;
         self.fps_timer += self.delta;
 
@@ -141,5 +147,16 @@ impl GameTime {
     #[must_use]
     pub fn total_time(&self) -> f64 {
         self.total
+    }
+
+    /// Set the time scale (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
+    pub fn set_time_scale(&mut self, scale: f64) {
+        self.time_scale = scale.clamp(0.1, 10.0);
+    }
+
+    /// Get the current time scale
+    #[must_use]
+    pub fn time_scale(&self) -> f64 {
+        self.time_scale
     }
 }

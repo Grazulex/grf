@@ -23,6 +23,7 @@ pub use overlay::{
     EntityInfo, ComponentInfo, ComponentValue, EcsInspectorData,
     DisplayRenderStats,
     EventType, EventLogEntry, EventLogFilter,
+    ConsoleCommand,
 };
 #[cfg(feature = "debug-tools")]
 pub use egui::Color32 as DebugColor;

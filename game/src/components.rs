@@ -79,6 +79,11 @@ impl PlayerControlled {
     pub fn new(speed: f32) -> Self {
         Self { speed }
     }
+
+    /// Set the movement speed
+    pub fn set_speed(&mut self, speed: f32) {
+        self.speed = speed;
+    }
 }
 
 /// Marker component for entities the camera should follow

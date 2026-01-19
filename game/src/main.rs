@@ -22,7 +22,7 @@ use log::{error, info};
 use winit::window::Window as WinitWindow;
 
 #[cfg(feature = "debug-tools")]
-use engine_debug::{DebugOverlay, EguiRenderer};
+use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use systems::{camera_system, input_system, movement_system};
@@ -129,6 +129,86 @@ impl Game {
         self.player_entity
             .and_then(|e| self.world.get::<Position>(e))
             .map(|p| p.current)
+    }
+
+    /// Process pending console commands
+    #[cfg(feature = "debug-tools")]
+    fn process_console_commands(&mut self) {
+        let commands = self.debug_overlay.take_pending_commands();
+
+        for cmd in commands {
+            match cmd {
+                ConsoleCommand::Teleport { x, y } => {
+                    if let Some(entity) = self.player_entity {
+                        if let Some(pos) = self.world.get_mut::<Position>(entity) {
+                            pos.current = Vec2::new(x, y);
+                            pos.previous = pos.current;
+                        }
+                        // Also snap camera
+                        if let Some(camera) = self.world.get_resource_mut::<Camera2D>() {
+                            camera.set_position(Vec2::new(x, y));
+                        }
+                        self.debug_overlay.log_game(
+                            self.game_time.total_time(),
+                            format!("Teleported to ({}, {})", x, y),
+                        );
+                    }
+                }
+                ConsoleCommand::SetSpeed(speed) => {
+                    if let Some(entity) = self.player_entity {
+                        if let Some(player) = self.world.get_mut::<PlayerControlled>(entity) {
+                            player.set_speed(speed);
+                            self.debug_overlay.log_debug(
+                                self.game_time.total_time(),
+                                format!("Player speed set to {}", speed),
+                            );
+                        }
+                    }
+                }
+                ConsoleCommand::SetTimescale(scale) => {
+                    self.game_time.set_time_scale(scale as f64);
+                    self.debug_overlay.log_debug(
+                        self.game_time.total_time(),
+                        format!("Timescale set to {}", scale),
+                    );
+                }
+                ConsoleCommand::GetPosition => {
+                    if let Some(pos) = self.get_player_position() {
+                        self.debug_overlay.console_print(format!(
+                            "Player position: ({:.1}, {:.1})",
+                            pos.x, pos.y
+                        ));
+                    } else {
+                        self.debug_overlay.console_print("No player entity found");
+                    }
+                }
+                ConsoleCommand::ListEntities => {
+                    let mut count = 0;
+                    for (entity, pos) in self.world.query::<Position>() {
+                        let name = if Some(entity) == self.player_entity {
+                            "Player"
+                        } else {
+                            "Entity"
+                        };
+                        self.debug_overlay.console_print(format!(
+                            "  [{}] {} at ({:.0}, {:.0})",
+                            entity.index, name, pos.current.x, pos.current.y
+                        ));
+                        count += 1;
+                    }
+                    self.debug_overlay.console_print(format!("Total: {} entities", count));
+                }
+                ConsoleCommand::ShowStats => {
+                    if let Some(renderer) = &self.renderer {
+                        let stats = renderer.stats();
+                        self.debug_overlay.console_print(format!(
+                            "Sprites: {}, Vertices: {}, Draw calls: {}",
+                            stats.sprites, stats.vertices, stats.draw_calls
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -262,6 +342,9 @@ impl App for Game {
                 self.debug_overlay.log_debug(self.game_time.total_time(), format!("Z-order labels {}", state));
                 info!("Z-order labels {}", state);
             }
+
+            // Process console commands
+            self.process_console_commands();
         }
 
         // Fixed timestep updates
