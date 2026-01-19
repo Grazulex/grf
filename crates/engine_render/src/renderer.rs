@@ -196,7 +196,9 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        self.sprite_batch.begin();
+        // Reset frame state including vertex buffer offsets
+        // This allows multiple batches per frame without overwriting each other
+        self.sprite_batch.begin_frame();
 
         Ok(Frame {
             output,

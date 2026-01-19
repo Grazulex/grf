@@ -213,6 +213,10 @@ pub struct SpriteBatch {
     vertices: Vec<SpriteVertex>,
     sprite_count: usize,
     screen_size: (u32, u32),
+    // Track vertex offset for multiple world batches per frame
+    // This allows multiple flush calls without overwriting previous batch data
+    world_vertex_offset: usize,
+    ui_vertex_offset: usize,
 }
 
 impl SpriteBatch {
@@ -371,6 +375,8 @@ impl SpriteBatch {
             vertices: Vec::with_capacity(MAX_VERTICES),
             sprite_count: 0,
             screen_size,
+            world_vertex_offset: 0,
+            ui_vertex_offset: 0,
         }
     }
 
@@ -418,7 +424,16 @@ impl SpriteBatch {
         self.use_ui_camera = false;
     }
 
-    /// Begin a new batch
+    /// Reset frame state (call at start of each frame before any batches)
+    /// This resets the vertex buffer offsets so batches can be written from the start
+    pub fn begin_frame(&mut self) {
+        self.world_vertex_offset = 0;
+        self.ui_vertex_offset = 0;
+        self.vertices.clear();
+        self.sprite_count = 0;
+    }
+
+    /// Begin a new batch (within a frame)
     pub fn begin(&mut self) {
         self.vertices.clear();
         self.sprite_count = 0;
@@ -458,16 +473,29 @@ impl SpriteBatch {
             return;
         }
 
-        // Use the appropriate vertex buffer based on camera mode
-        // This prevents the UI buffer write from overwriting world data
-        let vertex_buffer = if self.use_ui_camera {
-            &self.ui_vertex_buffer
+        // Use the appropriate vertex buffer and offset based on camera mode
+        // This prevents overwrites when multiple batches are flushed per frame
+        let (vertex_buffer, current_offset) = if self.use_ui_camera {
+            (&self.ui_vertex_buffer, self.ui_vertex_offset)
         } else {
-            &self.world_vertex_buffer
+            (&self.world_vertex_buffer, self.world_vertex_offset)
         };
 
-        // Upload vertex data to the appropriate buffer
-        queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+        // Calculate byte offset for writing
+        let byte_offset = (current_offset * std::mem::size_of::<SpriteVertex>()) as u64;
+
+        // Check if we have space in the buffer
+        let vertices_needed = self.vertices.len();
+        if current_offset + vertices_needed > MAX_VERTICES {
+            log::warn!(
+                "SpriteBatch buffer overflow! Offset {} + vertices {} > max {}",
+                current_offset, vertices_needed, MAX_VERTICES
+            );
+            return;
+        }
+
+        // Upload vertex data at the current offset
+        queue.write_buffer(vertex_buffer, byte_offset, bytemuck::cast_slice(&self.vertices));
 
         // Set pipeline and bind groups
         render_pass.set_pipeline(&self.pipeline);
@@ -481,9 +509,17 @@ impl SpriteBatch {
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        // Draw all sprites
+        // Draw all sprites using base_vertex to offset into the buffer
         let index_count = (self.sprite_count * 6) as u32;
-        render_pass.draw_indexed(0..index_count, 0, 0..1);
+        let base_vertex = current_offset as i32;
+        render_pass.draw_indexed(0..index_count, base_vertex, 0..1);
+
+        // Advance the offset for the next batch this frame
+        if self.use_ui_camera {
+            self.ui_vertex_offset += vertices_needed;
+        } else {
+            self.world_vertex_offset += vertices_needed;
+        }
     }
 
     /// Get the texture bind group layout (for creating texture bind groups)

@@ -31,7 +31,7 @@ use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use inventory::Inventory;
 use menu::{GameState, PreviousState};
-use player::Player;
+use player::PlayerAnimations;
 use save::{GameClockData, PlayerData, SaveData, SaveManager};
 use systems::{camera_system, input_system, movement_system};
 
@@ -61,15 +61,15 @@ struct Game {
     tileset_bind_group: Option<wgpu::BindGroup>,
     player_texture: Option<Texture>,
     player_bind_group: Option<wgpu::BindGroup>,
-    // Animated player textures (idle, walk, run)
+    // Player animation textures
     player_idle_texture: Option<Texture>,
     player_idle_bind_group: Option<wgpu::BindGroup>,
     player_walk_texture: Option<Texture>,
     player_walk_bind_group: Option<wgpu::BindGroup>,
     player_run_texture: Option<Texture>,
     player_run_bind_group: Option<wgpu::BindGroup>,
-    // Animated player instance
-    animated_player: Option<Player>,
+    // Player animation controller
+    player_animations: PlayerAnimations,
     // Window reference for egui
     window: Option<Arc<WinitWindow>>,
     // HUD
@@ -148,7 +148,7 @@ impl Game {
             player_walk_bind_group: None,
             player_run_texture: None,
             player_run_bind_group: None,
-            animated_player: None,
+            player_animations: PlayerAnimations::new(),
             window: None,
             hud: None,
             save_manager: SaveManager::new(),
@@ -663,8 +663,7 @@ impl App for Game {
             }
         }
 
-        // Load animated player textures (Alex character)
-        // Idle: 128x96 (4 frames x 3 rows)
+        // Load player animation textures
         match renderer.load_texture("assets/textures/characters/player_idle.png") {
             Ok(texture) => {
                 log::info!("Player idle texture loaded: {}x{}", texture.size.0, texture.size.1);
@@ -676,7 +675,6 @@ impl App for Game {
                 log::warn!("Failed to load player idle texture: {:?}", e);
             }
         }
-        // Walk: 192x96 (6 frames x 3 rows)
         match renderer.load_texture("assets/textures/characters/player_walk.png") {
             Ok(texture) => {
                 log::info!("Player walk texture loaded: {}x{}", texture.size.0, texture.size.1);
@@ -688,7 +686,6 @@ impl App for Game {
                 log::warn!("Failed to load player walk texture: {:?}", e);
             }
         }
-        // Run: 256x96 (8 frames x 3 rows)
         match renderer.load_texture("assets/textures/characters/player_run.png") {
             Ok(texture) => {
                 log::info!("Player run texture loaded: {}x{}", texture.size.0, texture.size.1);
@@ -699,12 +696,6 @@ impl App for Game {
             Err(e) => {
                 log::warn!("Failed to load player run texture: {:?}", e);
             }
-        }
-
-        // Create animated player if textures loaded
-        if self.player_idle_texture.is_some() {
-            self.animated_player = Some(Player::new(player_start));
-            log::info!("Animated player initialized at {:?}", player_start);
         }
 
         // Create player entity with components
@@ -854,26 +845,10 @@ impl App for Game {
         }
 
         // Fixed timestep updates
-        let fixed_dt = engine_core::FIXED_TIMESTEP as f32;
         while self.game_time.should_fixed_update() {
             // Run ECS systems
             input_system(&mut self.world);
             movement_system(&mut self.world);
-
-            // Update animated player (if using new player system)
-            if let Some(player) = &mut self.animated_player {
-                if let Some(input) = self.world.get_resource::<Input>() {
-                    player.handle_input(input);
-                }
-                player.update(fixed_dt);
-
-                // Sync animated player position with ECS entity
-                if let Some(entity) = self.player_entity {
-                    if let Some(pos) = self.world.get_mut::<Position>(entity) {
-                        pos.current = player.position;
-                    }
-                }
-            }
         }
 
         // Check for map transition triggers
@@ -901,6 +876,20 @@ impl App for Game {
         // Update camera to follow player
         let dt = self.game_time.delta as f32;
         camera_system(&mut self.world, dt);
+
+        // Update player animations based on ECS velocity
+        if let Some(entity) = self.player_entity {
+            let (velocity_x, velocity_y) = self
+                .world
+                .get::<Velocity>(entity)
+                .map(|v| (v.x, v.y))
+                .unwrap_or((0.0, 0.0));
+
+            if let Some(input) = self.world.get_resource::<Input>() {
+                self.player_animations.update_from_input(input, velocity_x, velocity_y);
+            }
+        }
+        self.player_animations.update(dt);
     }
 
     fn render(&mut self) {
@@ -1147,47 +1136,24 @@ impl App for Game {
                                     }
                                 }
 
-                                // Flush below layers with tileset texture
+                                // Flush below layers
                                 renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
-                                // 2. Render animated player (with separate texture)
-                                if let Some(player) = &self.animated_player {
-                                    if let Some(region) = player.current_sprite_region() {
-                                        let mut sprite = Sprite::new(player.position, Vec2::new(32.0, 32.0));
-                                        sprite.region = region;
-
-                                        // Apply flip_x for left direction
-                                        if player.flip_x {
-                                            // Swap UV coordinates horizontally
-                                            std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
-                                        }
-
+                                // 2. Render player in SEPARATE batch (testing fix for multiple batches)
+                                let alpha = self.game_time.alpha() as f32;
+                                for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
+                                    if let Some(pos) = self.world.get::<Position>(entity) {
+                                        let render_pos = pos.interpolated(alpha);
+                                        let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
+                                        sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
                                         renderer.draw_sprite(&sprite);
-
-                                        // Get the correct bind group based on player state
-                                        let bind_group = match player.state {
-                                            player::PlayerState::Idle => self.player_idle_bind_group.as_ref(),
-                                            player::PlayerState::Walking => self.player_walk_bind_group.as_ref(),
-                                            player::PlayerState::Running => self.player_run_bind_group.as_ref(),
-                                        };
-
-                                        renderer.flush_sprites_no_clear(&mut frame, bind_group);
                                     }
-                                } else {
-                                    // Fallback: render ECS entities with tileset texture
-                                    let alpha = self.game_time.alpha() as f32;
-                                    for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
-                                        if let Some(pos) = self.world.get::<Position>(entity) {
-                                            let render_pos = pos.interpolated(alpha);
-                                            let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
-                                            sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
-                                            renderer.draw_sprite(&sprite);
-                                        }
-                                    }
-                                    renderer.flush_sprites_no_clear(&mut frame, self.tileset_bind_group.as_ref());
                                 }
 
-                                // 3. Render layers ABOVE entities (tree tops, roofs)
+                                // Flush player (separate batch - uses flush_sprites_no_clear to preserve below layers)
+                                renderer.flush_sprites_no_clear(&mut frame, self.tileset_bind_group.as_ref());
+
+                                // 3. Render layers ABOVE entities
                                 for layer_idx in tilemap.above_layers() {
                                     let sprites = tilemap.get_visible_sprites(layer_idx, camera);
                                     for (sprite, _tileset_idx) in sprites {
@@ -1195,27 +1161,8 @@ impl App for Game {
                                     }
                                 }
 
-                                // Flush above layers with tileset texture
+                                // Flush above layers
                                 renderer.flush_sprites_no_clear(&mut frame, self.tileset_bind_group.as_ref());
-                            } else {
-                                // No tilemap, just render player
-                                if let Some(player) = &self.animated_player {
-                                    if let Some(region) = player.current_sprite_region() {
-                                        let mut sprite = Sprite::new(player.position, Vec2::new(32.0, 32.0));
-                                        sprite.region = region;
-                                        if player.flip_x {
-                                            std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
-                                        }
-                                        renderer.draw_sprite(&sprite);
-
-                                        let bind_group = match player.state {
-                                            player::PlayerState::Idle => self.player_idle_bind_group.as_ref(),
-                                            player::PlayerState::Walking => self.player_walk_bind_group.as_ref(),
-                                            player::PlayerState::Running => self.player_run_bind_group.as_ref(),
-                                        };
-                                        renderer.flush_sprites(&mut frame, bind_group);
-                                    }
-                                }
                             }
 
                             // Render HUD in screen-space (on top of world, no clear)
