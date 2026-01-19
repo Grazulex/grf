@@ -1,0 +1,40 @@
+# Player Character Animation Configuration
+# This file defines all spritesheets, animations, and movement parameters
+
+[movement]
+walk_speed = 120.0
+run_multiplier = 1.8
+
+# Sprite sheets used by this character
+# Each sheet has: path, size (width, height), frame_size
+[spritesheets.idle]
+path = "textures/characters/player_idle.png"
+size = [128, 96]
+frame_size = 32
+
+[spritesheets.walk]
+path = "textures/characters/player_walk.png"
+size = [192, 96]
+frame_size = 32
+
+[spritesheets.run]
+path = "textures/characters/player_run.png"
+size = [256, 96]
+frame_size = 32
+
+# Animations: sheet reference, frame count, frames per second
+# Rows are always: 0 = down, 1 = up, 2 = side (flip for left)
+[animations.idle]
+sheet = "idle"
+frames = 4
+fps = 5.0
+
+[animations.walk]
+sheet = "walk"
+frames = 6
+fps = 8.0
+
+[animations.run]
+sheet = "run"
+frames = 8
+fps = 12.0

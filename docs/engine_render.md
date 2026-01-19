@@ -610,6 +610,201 @@ if let Some(uv) = controller.current_uv() {
 
 ---
 
+## CharacterAnimator (Data-Driven)
+
+Systeme d'animation de personnages charge depuis des fichiers TOML.
+Permet de configurer les animations sans modifier le code.
+
+### Configuration TOML
+
+```toml
+# assets/data/characters/player.toml
+
+[movement]
+walk_speed = 120.0
+run_multiplier = 1.8
+
+[spritesheets.idle]
+path = "textures/characters/player_idle.png"
+size = [128, 96]
+frame_size = 32
+
+[spritesheets.walk]
+path = "textures/characters/player_walk.png"
+size = [192, 96]
+frame_size = 32
+
+[spritesheets.run]
+path = "textures/characters/player_run.png"
+size = [256, 96]
+frame_size = 32
+
+[animations.idle]
+sheet = "idle"
+frames = 4
+fps = 5.0
+
+[animations.walk]
+sheet = "walk"
+frames = 6
+fps = 8.0
+
+[animations.run]
+sheet = "run"
+frames = 8
+fps = 12.0
+```
+
+### Structures
+
+```rust
+/// Configuration complete d'un personnage
+pub struct CharacterConfig {
+    pub movement: MovementConfig,
+    pub spritesheets: HashMap<String, SpriteSheetConfig>,
+    pub animations: HashMap<String, AnimationConfig>,
+}
+
+/// Configuration des deplacements
+pub struct MovementConfig {
+    pub walk_speed: f32,
+    pub run_multiplier: f32,
+}
+
+/// Configuration d'une sprite sheet
+pub struct SpriteSheetConfig {
+    pub path: String,
+    pub size: [u32; 2],
+    pub frame_size: u32,
+}
+
+/// Configuration d'une animation
+pub struct AnimationConfig {
+    pub sheet: String,
+    pub frames: u32,
+    pub fps: f32,
+}
+
+/// Direction du personnage
+pub enum Direction {
+    Down,   // Ligne 0
+    Up,     // Ligne 1
+    Left,   // Ligne 2 (flip horizontal)
+    Right,  // Ligne 2
+}
+
+/// Etat du personnage
+pub enum CharacterState {
+    Idle,
+    Walking,
+    Running,
+}
+```
+
+### CharacterAnimator
+
+```rust
+pub struct CharacterAnimator {
+    /// Configuration chargee
+    pub config: CharacterConfig,
+    /// Controleur d'animation interne
+    pub controller: AnimationController,
+    /// Etat actuel
+    pub state: CharacterState,
+    /// Direction actuelle
+    pub direction: Direction,
+    /// Flip horizontal?
+    pub flip_x: bool,
+}
+
+impl CharacterAnimator {
+    /// Charge depuis un fichier TOML
+    pub fn from_file(path: &str) -> Result<Self, CharacterLoadError>;
+
+    /// Parse depuis une chaine TOML
+    pub fn from_toml(content: &str) -> Result<Self, CharacterLoadError>;
+
+    /// Vitesse de marche
+    pub fn walk_speed(&self) -> f32;
+
+    /// Vitesse de course
+    pub fn run_speed(&self) -> f32;
+
+    /// Taille d'une frame
+    pub fn frame_size(&self) -> u32;
+
+    /// Met a jour l'etat selon la velocite
+    pub fn update_state(&mut self, vx: f32, vy: f32, is_running: bool);
+
+    /// Met a jour l'animation
+    pub fn update(&mut self, dt: f32);
+
+    /// Region UV courante
+    pub fn current_region(&self) -> Option<SpriteRegion>;
+
+    /// Chemin de la texture courante
+    pub fn current_texture_path(&self) -> Option<&str>;
+}
+```
+
+### Utilisation
+
+```rust
+// Chargement
+let animator = CharacterAnimator::from_file("assets/data/characters/player.toml")?;
+let walk_speed = animator.walk_speed();
+
+// Chargement des textures depuis la config
+for (name, sheet) in &animator.config.spritesheets {
+    let path = format!("assets/{}", sheet.path);
+    let texture = renderer.load_texture(&path)?;
+    textures.insert(name.clone(), texture);
+}
+
+// Dans la boucle de jeu
+animator.update_state(velocity_x, velocity_y, is_running);
+animator.update(dt);
+
+// Rendu
+if let Some(region) = animator.current_region() {
+    sprite.region = region;
+    if animator.flip_x {
+        std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
+    }
+}
+
+let texture = textures.get(animator.state.key())?;
+renderer.draw_sprite(&sprite, texture);
+```
+
+### Convention des Sprite Sheets
+
+Les sprite sheets doivent suivre cette structure:
+- **Ligne 0**: Direction bas (face)
+- **Ligne 1**: Direction haut (dos)
+- **Ligne 2**: Direction cote (flip pour gauche)
+
+```
++---+---+---+---+   idle.png (128x96, 4 frames)
+| 0 | 1 | 2 | 3 |   <- Down (row 0)
++---+---+---+---+
+| 0 | 1 | 2 | 3 |   <- Up (row 1)
++---+---+---+---+
+| 0 | 1 | 2 | 3 |   <- Side (row 2, flip for left)
++---+---+---+---+
+```
+
+### Avantages
+
+| Aspect | Avant | Apres |
+|--------|-------|-------|
+| Lignes de code (game) | ~200 | ~10 |
+| Modifiable sans recompiler | Non | Oui |
+| Reutilisable (NPCs) | Non | Oui |
+| Configuration artiste | Non | Oui |
+
+---
+
 ## DayNightCycle
 
 Cycle jour/nuit visuel.

@@ -31,7 +31,7 @@ use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use inventory::Inventory;
 use menu::{GameState, PreviousState};
-use player::PlayerAnimations;
+use player::{load_player_animator, CharacterAnimator};
 use save::{GameClockData, PlayerData, SaveData, SaveManager};
 use systems::{camera_system, input_system, movement_system};
 
@@ -59,17 +59,10 @@ struct Game {
     // Textures and bind groups
     tileset_texture: Option<Texture>,
     tileset_bind_group: Option<wgpu::BindGroup>,
-    player_texture: Option<Texture>,
-    player_bind_group: Option<wgpu::BindGroup>,
-    // Player animation textures
-    player_idle_texture: Option<Texture>,
-    player_idle_bind_group: Option<wgpu::BindGroup>,
-    player_walk_texture: Option<Texture>,
-    player_walk_bind_group: Option<wgpu::BindGroup>,
-    player_run_texture: Option<Texture>,
-    player_run_bind_group: Option<wgpu::BindGroup>,
-    // Player animation controller
-    player_animations: PlayerAnimations,
+    // Player animation (loaded from config)
+    player_animator: Option<CharacterAnimator>,
+    // Player textures keyed by sheet name (idle, walk, run)
+    player_textures: std::collections::HashMap<String, (Texture, wgpu::BindGroup)>,
     // Window reference for egui
     window: Option<Arc<WinitWindow>>,
     // HUD
@@ -140,15 +133,8 @@ impl Game {
             renderer: None,
             tileset_texture: None,
             tileset_bind_group: None,
-            player_texture: None,
-            player_bind_group: None,
-            player_idle_texture: None,
-            player_idle_bind_group: None,
-            player_walk_texture: None,
-            player_walk_bind_group: None,
-            player_run_texture: None,
-            player_run_bind_group: None,
-            player_animations: PlayerAnimations::new(),
+            player_animator: None,
+            player_textures: std::collections::HashMap::new(),
             window: None,
             hud: None,
             save_manager: SaveManager::new(),
@@ -650,59 +636,41 @@ impl App for Game {
             }
         };
 
-        // Load player texture (fallback)
-        match renderer.load_texture("assets/textures/test_sprite.png") {
-            Ok(texture) => {
-                log::info!("Player texture loaded: {}x{}", texture.size.0, texture.size.1);
-                let bind_group = renderer.create_texture_bind_group(&texture);
-                self.player_texture = Some(texture);
-                self.player_bind_group = Some(bind_group);
-            }
-            Err(e) => {
-                log::error!("Failed to load player texture: {:?}", e);
-            }
-        }
+        // Load player animator from config
+        let walk_speed = match load_player_animator() {
+            Ok(animator) => {
+                let walk_speed = animator.walk_speed();
+                info!("Player animator loaded (walk: {} px/s)", walk_speed);
 
-        // Load player animation textures
-        match renderer.load_texture("assets/textures/characters/player_idle.png") {
-            Ok(texture) => {
-                log::info!("Player idle texture loaded: {}x{}", texture.size.0, texture.size.1);
-                let bind_group = renderer.create_texture_bind_group(&texture);
-                self.player_idle_texture = Some(texture);
-                self.player_idle_bind_group = Some(bind_group);
+                // Load textures from config paths
+                for (name, sheet) in &animator.config.spritesheets {
+                    let path = format!("assets/{}", sheet.path);
+                    match renderer.load_texture(&path) {
+                        Ok(texture) => {
+                            info!("Player {} texture loaded: {}x{}", name, texture.size.0, texture.size.1);
+                            let bind_group = renderer.create_texture_bind_group(&texture);
+                            self.player_textures.insert(name.clone(), (texture, bind_group));
+                        }
+                        Err(e) => {
+                            error!("Failed to load player {} texture: {:?}", name, e);
+                        }
+                    }
+                }
+
+                self.player_animator = Some(animator);
+                walk_speed
             }
             Err(e) => {
-                log::warn!("Failed to load player idle texture: {:?}", e);
+                error!("Failed to load player config: {}", e);
+                120.0 // fallback speed
             }
-        }
-        match renderer.load_texture("assets/textures/characters/player_walk.png") {
-            Ok(texture) => {
-                log::info!("Player walk texture loaded: {}x{}", texture.size.0, texture.size.1);
-                let bind_group = renderer.create_texture_bind_group(&texture);
-                self.player_walk_texture = Some(texture);
-                self.player_walk_bind_group = Some(bind_group);
-            }
-            Err(e) => {
-                log::warn!("Failed to load player walk texture: {:?}", e);
-            }
-        }
-        match renderer.load_texture("assets/textures/characters/player_run.png") {
-            Ok(texture) => {
-                log::info!("Player run texture loaded: {}x{}", texture.size.0, texture.size.1);
-                let bind_group = renderer.create_texture_bind_group(&texture);
-                self.player_run_texture = Some(texture);
-                self.player_run_bind_group = Some(bind_group);
-            }
-            Err(e) => {
-                log::warn!("Failed to load player run texture: {:?}", e);
-            }
-        }
+        };
 
         // Create player entity with components
         let player = self.world.spawn();
         self.world.insert(player, Position::from_vec2(player_start));
         self.world.insert(player, Velocity::default());
-        self.world.insert(player, PlayerControlled::new(120.0)); // Walk speed in pixels/sec
+        self.world.insert(player, PlayerControlled::new(walk_speed));
         self.world.insert(player, CameraTarget);
         self.world.insert(player, SpriteRender::new(32.0, 32.0));
         self.world.insert(player, Collider::new(32.0, 32.0));
@@ -877,19 +845,23 @@ impl App for Game {
         let dt = self.game_time.delta as f32;
         camera_system(&mut self.world, dt);
 
-        // Update player animations based on ECS velocity
-        if let Some(entity) = self.player_entity {
-            let (velocity_x, velocity_y) = self
+        // Update player animator based on ECS velocity
+        if let (Some(entity), Some(animator)) = (self.player_entity, &mut self.player_animator) {
+            let (vx, vy) = self
                 .world
                 .get::<Velocity>(entity)
                 .map(|v| (v.x, v.y))
                 .unwrap_or((0.0, 0.0));
 
-            if let Some(input) = self.world.get_resource::<Input>() {
-                self.player_animations.update_from_input(input, velocity_x, velocity_y);
-            }
+            let is_running = self
+                .world
+                .get_resource::<Input>()
+                .map(|i| i.is_key_pressed(KeyCode::LShift) || i.is_key_pressed(KeyCode::RShift))
+                .unwrap_or(false);
+
+            animator.update_state(vx, vy, is_running);
+            animator.update(dt);
         }
-        self.player_animations.update(dt);
     }
 
     fn render(&mut self) {
@@ -1140,37 +1112,37 @@ impl App for Game {
                                 renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
                                 // 2. Render player with animation texture in SEPARATE batch
-                                let alpha = self.game_time.alpha() as f32;
-                                for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
-                                    if let Some(pos) = self.world.get::<Position>(entity) {
-                                        let render_pos = pos.interpolated(alpha);
+                                if let Some(animator) = &self.player_animator {
+                                    let alpha = self.game_time.alpha() as f32;
+                                    for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
+                                        if let Some(pos) = self.world.get::<Position>(entity) {
+                                            let render_pos = pos.interpolated(alpha);
+                                            let frame_size = animator.frame_size() as f32;
 
-                                        // Create sprite with animation region
-                                        let mut sprite = Sprite::new(render_pos, Vec2::new(32.0, 32.0));
-                                        if let Some(region) = self.player_animations.current_sprite_region() {
-                                            sprite.region = region;
+                                            // Create sprite with animation region
+                                            let mut sprite = Sprite::new(render_pos, Vec2::new(frame_size, frame_size));
+                                            if let Some(region) = animator.current_region() {
+                                                sprite.region = region;
+                                            }
+
+                                            // Handle horizontal flip for left-facing direction
+                                            if animator.flip_x {
+                                                std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
+                                            }
+
+                                            renderer.draw_sprite(&sprite);
                                         }
-
-                                        // Handle horizontal flip for left-facing direction
-                                        if self.player_animations.flip_x {
-                                            // Swap u coordinates to flip horizontally
-                                            std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
-                                        }
-
-                                        renderer.draw_sprite(&sprite);
                                     }
+
+                                    // Get the correct texture based on player state
+                                    let sheet_name = animator.state.key();
+                                    let player_bind_group = self.player_textures
+                                        .get(sheet_name)
+                                        .map(|(_, bg)| bg);
+
+                                    // Flush player with animation texture
+                                    renderer.flush_sprites_no_clear(&mut frame, player_bind_group);
                                 }
-
-                                // Get the correct texture based on player state
-                                let player_bind_group = match self.player_animations.current_texture_name() {
-                                    "player_idle" => self.player_idle_bind_group.as_ref(),
-                                    "player_walk" => self.player_walk_bind_group.as_ref(),
-                                    "player_run" => self.player_run_bind_group.as_ref(),
-                                    _ => self.player_idle_bind_group.as_ref(),
-                                };
-
-                                // Flush player with animation texture
-                                renderer.flush_sprites_no_clear(&mut frame, player_bind_group);
 
                                 // 3. Render layers ABOVE entities
                                 for layer_idx in tilemap.above_layers() {
