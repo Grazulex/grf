@@ -9,8 +9,7 @@ pub enum GameState {
     MainMenu,
     /// Actively playing the game
     Playing,
-    /// Game is paused (pause menu shown) - used in task #037
-    #[allow(dead_code)]
+    /// Game is paused (pause menu shown)
     Paused,
 }
 

@@ -40,6 +40,8 @@ struct Game {
     game_state: GameState,
     /// Main menu (from engine_ui)
     main_menu: Menu,
+    /// Pause menu (from engine_ui)
+    pause_menu: Menu,
     /// ECS World containing all entities and components
     world: World,
     /// Reference to the player entity
@@ -78,6 +80,19 @@ impl Game {
         menu
     }
 
+    /// Create the pause menu with standard options
+    fn create_pause_menu() -> Menu {
+        let mut menu = Menu::new(Vec2::new(400.0, 300.0)); // Will be repositioned on render
+        menu.set_items(vec![
+            MenuItem::new("resume", "Resume"),
+            MenuItem::new("save_game", "Save Game"),
+            MenuItem::new("settings", "Settings"),
+            MenuItem::new("main_menu", "Main Menu"),
+            MenuItem::new("quit", "Quit"),
+        ]);
+        menu
+    }
+
     fn new() -> Self {
         let mut world = World::new();
 
@@ -88,6 +103,7 @@ impl Game {
             game_time: GameTime::new(),
             game_state: GameState::MainMenu,
             main_menu: Self::create_main_menu(),
+            pause_menu: Self::create_pause_menu(),
             world,
             player_entity: None,
             renderer: None,
@@ -336,6 +352,64 @@ impl Game {
         info!("New game started!");
     }
 
+    /// Update pause menu state
+    fn update_pause_menu(&mut self) {
+        // Handle menu input
+        let (confirmed, escape_pressed) = {
+            if let Some(input) = self.world.get_resource::<Input>() {
+                if input.is_key_just_pressed(KeyCode::Up) || input.is_key_just_pressed(KeyCode::W) {
+                    self.pause_menu.move_up();
+                }
+                if input.is_key_just_pressed(KeyCode::Down) || input.is_key_just_pressed(KeyCode::S) {
+                    self.pause_menu.move_down();
+                }
+                (
+                    input.is_key_just_pressed(KeyCode::Enter) || input.is_key_just_pressed(KeyCode::Space),
+                    input.is_key_just_pressed(KeyCode::Escape),
+                )
+            } else {
+                (false, false)
+            }
+        };
+
+        // Escape also resumes
+        if escape_pressed {
+            info!("Game resumed");
+            self.game_state = GameState::Playing;
+            return;
+        }
+
+        // Handle confirmed selection
+        if confirmed {
+            if let Some(item) = self.pause_menu.selected_item() {
+                match item.id.as_str() {
+                    "resume" => {
+                        info!("Game resumed");
+                        self.game_state = GameState::Playing;
+                    }
+                    "save_game" => {
+                        info!("Saving game...");
+                        self.save_game();
+                    }
+                    "settings" => {
+                        // TODO: Task #038 will implement settings menu
+                        info!("Settings not yet implemented");
+                    }
+                    "main_menu" => {
+                        info!("Returning to main menu...");
+                        self.main_menu.reset();
+                        self.game_state = GameState::MainMenu;
+                    }
+                    "quit" => {
+                        info!("Goodbye!");
+                        std::process::exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// Process pending console commands
     #[cfg(feature = "debug-tools")]
     fn process_console_commands(&mut self) {
@@ -519,7 +593,7 @@ impl App for Game {
                 return;
             }
             GameState::Paused => {
-                // TODO: Handle pause menu in task #037
+                self.update_pause_menu();
                 return;
             }
             GameState::Playing => {
@@ -529,7 +603,7 @@ impl App for Game {
 
         // === Playing state logic ===
 
-        // Check for escape to pause/quit
+        // Check for escape to pause
         {
             let escape_pressed = self
                 .world
@@ -537,8 +611,10 @@ impl App for Game {
                 .map(|i| i.is_key_just_pressed(KeyCode::Escape))
                 .unwrap_or(false);
             if escape_pressed {
-                // For now, quit. Task #037 will add pause menu
-                std::process::exit(0);
+                info!("Game paused");
+                self.pause_menu.reset(); // Reset selection to first item
+                self.game_state = GameState::Paused;
+                return;
             }
         }
 
@@ -924,6 +1000,18 @@ impl App for Game {
                             if let Some(hud) = &self.hud {
                                 renderer.set_screen_space();
                                 for sprite in hud.sprites() {
+                                    renderer.draw_sprite(&sprite);
+                                }
+                                renderer.flush_sprites_no_clear(&mut frame, None);
+                                renderer.set_world_space();
+                            }
+
+                            // Render pause menu overlay when paused
+                            if self.game_state == GameState::Paused {
+                                let size = renderer.size();
+                                let menu_sprites = self.pause_menu.sprites((size.0 as f32, size.1 as f32));
+                                renderer.set_screen_space();
+                                for sprite in menu_sprites {
                                     renderer.draw_sprite(&sprite);
                                 }
                                 renderer.flush_sprites_no_clear(&mut frame, None);
