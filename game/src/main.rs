@@ -233,7 +233,7 @@ impl Game {
         let game_clock_data = self
             .world
             .get_resource::<engine_core::GameClock>()
-            .map(|c| GameClockData::from_game_clock(c))
+            .map(GameClockData::from_game_clock)
             .unwrap_or_else(|| GameClockData {
                 minute: 0,
                 hour: 6,

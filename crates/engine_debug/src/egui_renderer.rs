@@ -2,8 +2,6 @@
 //!
 //! Provides a wrapper for rendering egui UI with wgpu.
 
-#![cfg(feature = "debug-tools")]
-
 use egui::Context;
 use egui_wgpu::Renderer;
 use egui_wgpu::ScreenDescriptor;

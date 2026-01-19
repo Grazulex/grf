@@ -148,11 +148,9 @@ impl AnimationController {
 
     /// Play an animation by name
     pub fn play(&mut self, name: &str) {
-        if self.current.as_deref() != Some(name) {
-            if self.animations.contains_key(name) {
-                self.current = Some(name.to_string());
-                self.time = 0.0;
-            }
+        if self.current.as_deref() != Some(name) && self.animations.contains_key(name) {
+            self.current = Some(name.to_string());
+            self.time = 0.0;
         }
     }
 

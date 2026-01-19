@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 /// Item type categories
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemType {
     /// Tools (hoe, watering can, axe, pickaxe, etc.)
@@ -20,6 +20,7 @@ pub enum ItemType {
     /// Harvested crops
     Crop,
     /// Raw resources (wood, stone, ore)
+    #[default]
     Resource,
     /// Food and potions
     Consumable,
@@ -27,12 +28,6 @@ pub enum ItemType {
     Furniture,
     /// Quest items and special objects
     Special,
-}
-
-impl Default for ItemType {
-    fn default() -> Self {
-        Self::Resource
-    }
 }
 
 /// Tool type for specialized tools

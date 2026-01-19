@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::items::{ItemDatabase, ItemType};
 
 /// Growth stage of a crop
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GrowthStage {
     /// Just planted, seed visible
+    #[default]
     Seed,
     /// Small sprout
     Sprout,
@@ -23,12 +24,6 @@ pub enum GrowthStage {
     Harvestable,
     /// Dead (from neglect or wrong season)
     Dead,
-}
-
-impl Default for GrowthStage {
-    fn default() -> Self {
-        Self::Seed
-    }
 }
 
 impl GrowthStage {

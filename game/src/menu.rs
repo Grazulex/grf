@@ -3,9 +3,10 @@
 //! Handles game state transitions (menu, playing, paused).
 
 /// Game state enum for managing different screens
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum GameState {
     /// Main menu screen
+    #[default]
     MainMenu,
     /// Actively playing the game
     Playing,
@@ -20,10 +21,4 @@ pub enum GameState {
 pub enum PreviousState {
     MainMenu,
     Paused,
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        Self::MainMenu
-    }
 }

@@ -14,18 +14,13 @@ pub const DEFAULT_INVENTORY_SIZE: usize = 36;
 pub const HOTBAR_SIZE: usize = 10;
 
 /// Item quality levels (like Stardew Valley)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Quality {
+    #[default]
     Normal,
     Silver,
     Gold,
     Iridium,
-}
-
-impl Default for Quality {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl Quality {
@@ -169,7 +164,7 @@ impl Inventory {
     /// Check if a slot is empty
     #[must_use]
     pub fn is_empty(&self, slot: usize) -> bool {
-        self.slots.get(slot).map_or(true, |s| s.is_none())
+        self.slots.get(slot).is_none_or(|s| s.is_none())
     }
 
     /// Get currently selected slot index

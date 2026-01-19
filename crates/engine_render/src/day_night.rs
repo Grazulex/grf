@@ -3,7 +3,6 @@
 //! Provides ambient colors based on the time of day for visual effects.
 
 use glam::Vec3;
-use wgpu;
 
 /// Color represented as RGB floats (0.0 to 1.0)
 #[derive(Debug, Clone, Copy)]

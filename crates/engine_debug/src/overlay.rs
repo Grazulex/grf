@@ -2,8 +2,6 @@
 //!
 //! Provides the main debug UI overlay with various panels.
 
-#![cfg(feature = "debug-tools")]
-
 use crate::DebugConfig;
 use egui::{Context, RichText, Window, Color32, Stroke, Rect, Pos2};
 use engine_core::GameTime;
@@ -1364,7 +1362,7 @@ impl DebugOverlay {
             "timescale" | "ts" => {
                 if let Some(val) = args.first() {
                     if let Ok(scale) = val.parse::<f32>() {
-                        if scale >= 0.1 && scale <= 10.0 {
+                        if (0.1..=10.0).contains(&scale) {
                             self.pending_commands.push(ConsoleCommand::SetTimescale(scale));
                             self.console_output.push(format!("Timescale set to {}", scale));
                         } else {

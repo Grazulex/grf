@@ -361,11 +361,9 @@ impl Npc {
             // If we're not already at the scheduled activity
             if self.state != activity || self.state == NpcState::Idle {
                 // Try to go to the location
-                if activity != NpcState::Walking {
-                    if !self.go_to(&location) {
-                        // Location not found, just switch state
-                        self.state = activity;
-                    }
+                if activity != NpcState::Walking && !self.go_to(&location) {
+                    // Location not found, just switch state
+                    self.state = activity;
                 }
             }
         }

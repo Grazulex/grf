@@ -121,7 +121,7 @@ impl<T> SparseSet<T> {
 
     fn contains(&self, entity_index: u32) -> bool {
         let idx = entity_index as usize;
-        self.sparse.get(idx).map_or(false, |opt| opt.is_some())
+        self.sparse.get(idx).is_some_and(|opt| opt.is_some())
     }
 
     #[allow(dead_code)]
@@ -330,7 +330,7 @@ impl World {
         }
 
         let type_id = TypeId::of::<T>();
-        self.storages.get(&type_id).map_or(false, |storage| {
+        self.storages.get(&type_id).is_some_and(|storage| {
             storage
                 .as_any()
                 .downcast_ref::<SparseSet<T>>()
@@ -482,7 +482,7 @@ impl<'a, T: Component> Iterator for QueryIterMut<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         let inner = self.inner.as_mut()?;
 
-        for (&entity_index, component) in inner.by_ref() {
+        if let Some((&entity_index, component)) = inner.next() {
             let generation = self.generations[entity_index as usize];
             let entity = Entity::new(entity_index, generation);
             return Some((entity, component));

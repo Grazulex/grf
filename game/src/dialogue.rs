@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 /// A condition that must be met for a choice to be available
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Condition {
     /// Player has at least N of an item
@@ -24,17 +24,12 @@ pub enum Condition {
     /// A flag is not set
     FlagNotSet { flag: String },
     /// Always true
+    #[default]
     Always,
 }
 
-impl Default for Condition {
-    fn default() -> Self {
-        Self::Always
-    }
-}
-
 /// An action to perform when a choice is selected
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
     /// Give an item to the player
@@ -48,13 +43,8 @@ pub enum Action {
     /// Clear a flag
     ClearFlag { flag: String },
     /// No action
+    #[default]
     None,
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// A choice the player can make in dialogue
