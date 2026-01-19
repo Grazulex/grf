@@ -542,6 +542,18 @@ impl App for Game {
                     #[cfg(feature = "debug-tools")]
                     renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
+                    // Update render stats for profiler
+                    #[cfg(feature = "debug-tools")]
+                    {
+                        let stats = renderer.stats();
+                        self.debug_overlay.update_render_stats(
+                            stats.sprites,
+                            stats.vertices,
+                            stats.draw_calls,
+                            stats.texture_binds,
+                        );
+                    }
+
                     // Render debug overlay on top (egui)
                     #[cfg(feature = "debug-tools")]
                     if let (Some(egui_renderer), Some(window)) = (&mut self.egui_renderer, &self.window) {

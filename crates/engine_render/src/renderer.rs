@@ -4,6 +4,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::sprite::{Sprite, SpriteBatch};
+use crate::stats::RenderStats;
 use crate::texture::Texture;
 use crate::CLEAR_COLOR;
 
@@ -20,6 +21,8 @@ pub struct Renderer {
     #[allow(dead_code)]
     white_texture: Texture,
     white_bind_group: wgpu::BindGroup,
+    // Render statistics for profiling
+    stats: RenderStats,
 }
 
 impl Renderer {
@@ -107,6 +110,7 @@ impl Renderer {
             sprite_batch,
             white_texture,
             white_bind_group,
+            stats: RenderStats::new(),
         }
     }
 
@@ -152,6 +156,12 @@ impl Renderer {
         self.sprite_batch.texture_bind_group_layout()
     }
 
+    /// Get the current render statistics
+    #[must_use]
+    pub fn stats(&self) -> &RenderStats {
+        &self.stats
+    }
+
     /// Create a texture from a file path
     pub fn load_texture(&self, path: impl AsRef<std::path::Path>) -> Result<Texture, image::ImageError> {
         Texture::from_path(&self.device, &self.queue, path, None)
@@ -172,6 +182,9 @@ impl Renderer {
     ///
     /// Returns Ok(Frame) on success, Err if the surface is lost
     pub fn begin_frame(&mut self) -> Result<Frame, wgpu::SurfaceError> {
+        // Reset stats for new frame
+        self.stats.reset();
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -202,6 +215,13 @@ impl Renderer {
     pub fn flush_sprites(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
         // Use white texture if none provided
         let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
+
+        // Record stats before flushing
+        let sprite_count = self.sprite_batch.sprite_count();
+        if sprite_count > 0 {
+            self.stats.record_draw(sprite_count);
+            self.stats.record_texture_bind();
+        }
 
         {
             let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -234,6 +254,11 @@ impl Renderer {
         // Only render sprites here if flush_sprites wasn't called
         // Check if batch is non-empty
         if !self.sprite_batch.is_empty() {
+            // Record stats for this batch
+            let sprite_count = self.sprite_batch.sprite_count();
+            self.stats.record_draw(sprite_count);
+            self.stats.record_texture_bind();
+
             let mut frame = frame;
             {
                 let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

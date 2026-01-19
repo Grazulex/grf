@@ -221,6 +221,19 @@ pub struct PanelState {
     pub show_console: bool,
 }
 
+/// Render statistics for display
+#[derive(Debug, Clone, Default)]
+pub struct DisplayRenderStats {
+    /// Sprites rendered
+    pub sprites: usize,
+    /// Vertices submitted
+    pub vertices: usize,
+    /// Draw calls
+    pub draw_calls: usize,
+    /// Texture binds
+    pub texture_binds: usize,
+}
+
 /// Debug overlay manager
 pub struct DebugOverlay {
     /// Debug configuration
@@ -231,6 +244,14 @@ pub struct DebugOverlay {
     fps_history: Vec<f32>,
     /// Frame time history
     frame_time_history: Vec<f32>,
+    /// Draw calls history
+    draw_calls_history: Vec<f32>,
+    /// Sprites history
+    sprites_history: Vec<f32>,
+    /// Current render stats
+    render_stats: DisplayRenderStats,
+    /// Memory usage history (MB)
+    memory_history: Vec<f32>,
     /// Console input buffer
     console_input: String,
     /// Console output history
@@ -260,6 +281,10 @@ impl DebugOverlay {
             panels: PanelState::default(),
             fps_history: Vec::with_capacity(120),
             frame_time_history: Vec::with_capacity(120),
+            draw_calls_history: Vec::with_capacity(120),
+            sprites_history: Vec::with_capacity(120),
+            render_stats: DisplayRenderStats::default(),
+            memory_history: Vec::with_capacity(120),
             console_input: String::new(),
             console_output: vec![
                 "Debug Console initialized.".to_string(),
@@ -374,6 +399,37 @@ impl DebugOverlay {
         if self.fps_history.len() > 120 {
             self.fps_history.remove(0);
             self.frame_time_history.remove(0);
+        }
+    }
+
+    /// Update render statistics
+    pub fn update_render_stats(&mut self, sprites: usize, vertices: usize, draw_calls: usize, texture_binds: usize) {
+        self.render_stats.sprites = sprites;
+        self.render_stats.vertices = vertices;
+        self.render_stats.draw_calls = draw_calls;
+        self.render_stats.texture_binds = texture_binds;
+
+        // Add to history
+        self.draw_calls_history.push(draw_calls as f32);
+        self.sprites_history.push(sprites as f32);
+
+        // Keep last 120 frames
+        if self.draw_calls_history.len() > 120 {
+            self.draw_calls_history.remove(0);
+            self.sprites_history.remove(0);
+        }
+    }
+
+    /// Update memory stats (approximate heap usage in MB)
+    pub fn update_memory(&mut self) {
+        // Use a simple approximation based on allocated memory
+        // In a real scenario, you might use a memory allocator tracker
+        // For now, we'll estimate based on the history vectors themselves
+        let estimated_mb = 0.0; // Placeholder - real tracking requires custom allocator
+        self.memory_history.push(estimated_mb);
+
+        if self.memory_history.len() > 120 {
+            self.memory_history.remove(0);
         }
     }
 
@@ -529,48 +585,153 @@ impl DebugOverlay {
 
     /// Render performance panel
     fn render_performance_panel(&mut self, ctx: &Context, game_time: &GameTime) {
-        Window::new("📊 Performance")
-            .default_size([300.0, 200.0])
+        Window::new("📊 Performance Profiler")
+            .default_size([350.0, 450.0])
             .show(ctx, |ui| {
-                ui.heading("Frame Stats");
+                // Frame Stats Section
+                ui.collapsing(RichText::new("Frame Stats").strong(), |ui| {
+                    let fps = game_time.fps();
+                    let frame_time = game_time.delta * 1000.0;
 
-                let fps = game_time.fps();
-                let frame_time = game_time.delta * 1000.0;
+                    // Calculate min/max/avg FPS
+                    let (min_fps, max_fps, avg_fps) = if !self.fps_history.is_empty() {
+                        let min = self.fps_history.iter().cloned().fold(f32::MAX, f32::min);
+                        let max = self.fps_history.iter().cloned().fold(f32::MIN, f32::max);
+                        let avg = self.fps_history.iter().sum::<f32>() / self.fps_history.len() as f32;
+                        (min, max, avg)
+                    } else {
+                        (0.0, 0.0, 0.0)
+                    };
 
-                ui.horizontal(|ui| {
-                    ui.label("FPS:");
-                    ui.label(RichText::new(format!("{:.1}", fps)).strong());
-                });
+                    egui::Grid::new("frame_stats_grid")
+                        .num_columns(2)
+                        .spacing([20.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("FPS:");
+                            let fps_color = if fps >= 55.0 {
+                                Color32::GREEN
+                            } else if fps >= 30.0 {
+                                Color32::YELLOW
+                            } else {
+                                Color32::RED
+                            };
+                            ui.label(RichText::new(format!("{:.1}", fps)).color(fps_color).strong());
+                            ui.end_row();
 
-                ui.horizontal(|ui| {
-                    ui.label("Frame Time:");
-                    ui.label(format!("{:.2} ms", frame_time));
-                });
+                            ui.label("Frame Time:");
+                            ui.label(format!("{:.2} ms", frame_time));
+                            ui.end_row();
 
-                ui.horizontal(|ui| {
-                    ui.label("Total Time:");
-                    ui.label(format!("{:.1} s", game_time.total_time()));
-                });
+                            ui.label("Min/Max/Avg FPS:");
+                            ui.label(format!("{:.0} / {:.0} / {:.0}", min_fps, max_fps, avg_fps));
+                            ui.end_row();
+
+                            ui.label("Total Time:");
+                            ui.label(format!("{:.1} s", game_time.total_time()));
+                            ui.end_row();
+                        });
+                }).header_response.clicked();
 
                 ui.separator();
-                ui.heading("FPS Graph");
 
-                // Simple FPS graph
-                let points: Vec<[f64; 2]> = self
-                    .fps_history
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &fps)| [i as f64, fps as f64])
-                    .collect();
+                // FPS Graph
+                ui.collapsing(RichText::new("FPS Graph").strong(), |ui| {
+                    let fps_points: Vec<[f64; 2]> = self
+                        .fps_history
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &fps)| [i as f64, fps as f64])
+                        .collect();
 
-                if !points.is_empty() {
-                    egui_plot::Plot::new("fps_plot")
-                        .height(100.0)
-                        .show_axes(false)
-                        .show(ui, |plot_ui| {
-                            plot_ui.line(egui_plot::Line::new(points).color(egui::Color32::GREEN));
+                    if !fps_points.is_empty() {
+                        egui_plot::Plot::new("fps_plot")
+                            .height(80.0)
+                            .show_axes([false, true])
+                            .include_y(0.0)
+                            .include_y(70.0)
+                            .show(ui, |plot_ui| {
+                                plot_ui.line(egui_plot::Line::new(fps_points).color(Color32::GREEN).name("FPS"));
+                                // Draw 60 FPS target line
+                                plot_ui.hline(egui_plot::HLine::new(60.0).color(Color32::from_rgb(100, 100, 100)).style(egui_plot::LineStyle::dashed_dense()));
+                            });
+                    }
+                }).header_response.clicked();
+
+                // Frame Time Graph
+                ui.collapsing(RichText::new("Frame Time Graph").strong(), |ui| {
+                    let frame_time_points: Vec<[f64; 2]> = self
+                        .frame_time_history
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &ft)| [i as f64, ft as f64])
+                        .collect();
+
+                    if !frame_time_points.is_empty() {
+                        egui_plot::Plot::new("frame_time_plot")
+                            .height(80.0)
+                            .show_axes([false, true])
+                            .include_y(0.0)
+                            .show(ui, |plot_ui| {
+                                plot_ui.line(egui_plot::Line::new(frame_time_points).color(Color32::from_rgb(255, 165, 0)).name("ms"));
+                                // Draw 16.67ms target (60 FPS)
+                                plot_ui.hline(egui_plot::HLine::new(16.67).color(Color32::from_rgb(100, 100, 100)).style(egui_plot::LineStyle::dashed_dense()));
+                            });
+                    }
+                }).header_response.clicked();
+
+                ui.separator();
+
+                // Render Stats Section
+                ui.collapsing(RichText::new("Render Stats").strong(), |ui| {
+                    egui::Grid::new("render_stats_grid")
+                        .num_columns(2)
+                        .spacing([20.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Sprites:");
+                            ui.label(RichText::new(format!("{}", self.render_stats.sprites)).strong());
+                            ui.end_row();
+
+                            ui.label("Vertices:");
+                            ui.label(format!("{}", self.render_stats.vertices));
+                            ui.end_row();
+
+                            ui.label("Draw Calls:");
+                            ui.label(RichText::new(format!("{}", self.render_stats.draw_calls)).strong());
+                            ui.end_row();
+
+                            ui.label("Texture Binds:");
+                            ui.label(format!("{}", self.render_stats.texture_binds));
+                            ui.end_row();
                         });
-                }
+
+                    // Sprites graph
+                    if !self.sprites_history.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label("Sprites over time:");
+                        let sprites_points: Vec<[f64; 2]> = self
+                            .sprites_history
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &s)| [i as f64, s as f64])
+                            .collect();
+
+                        egui_plot::Plot::new("sprites_plot")
+                            .height(60.0)
+                            .show_axes([false, true])
+                            .include_y(0.0)
+                            .show(ui, |plot_ui| {
+                                plot_ui.line(egui_plot::Line::new(sprites_points).color(Color32::from_rgb(135, 206, 250)).name("Sprites"));
+                            });
+                    }
+                }).header_response.clicked();
+
+                ui.separator();
+
+                // Hotkey hints
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("F2").color(Color32::GRAY).small());
+                    ui.label(RichText::new("Performance").small());
+                });
             });
     }
 

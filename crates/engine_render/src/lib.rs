@@ -8,6 +8,7 @@ mod camera;
 mod day_night;
 mod renderer;
 mod sprite;
+mod stats;
 mod texture;
 mod tilemap;
 
@@ -17,6 +18,7 @@ pub use day_night::{Color, DayNightCycle};
 pub use glam;
 pub use renderer::Renderer;
 pub use sprite::{Sprite, SpriteBatch, SpriteRegion, SpriteVertex};
+pub use stats::RenderStats;
 pub use texture::Texture;
 pub use tilemap::{LayerType, SpawnPoint, TileLayer, Tilemap, TilemapError, Tileset, Trigger};
 pub use wgpu;

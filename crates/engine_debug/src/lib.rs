@@ -21,6 +21,7 @@ pub use overlay::{
     DebugOverlay, PanelState, DebugBox, CollisionDebugData,
     ZOrderLabel, LayerInfo, ZOrderDebugData,
     EntityInfo, ComponentInfo, ComponentValue, EcsInspectorData,
+    DisplayRenderStats,
 };
 #[cfg(feature = "debug-tools")]
 pub use egui::Color32 as DebugColor;

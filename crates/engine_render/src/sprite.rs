@@ -360,6 +360,12 @@ impl SpriteBatch {
         self.sprite_count == 0
     }
 
+    /// Get the number of sprites in the current batch
+    #[must_use]
+    pub fn sprite_count(&self) -> usize {
+        self.sprite_count
+    }
+
     /// Add a sprite to the current batch
     pub fn draw(&mut self, sprite: &Sprite) {
         if self.sprite_count >= MAX_SPRITES {
