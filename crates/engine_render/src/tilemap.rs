@@ -1,12 +1,126 @@
 //! Tilemap loading and rendering
 //!
 //! Supports JSON-based tilemaps with multiple layers and tilesets.
+//! Compatible with both custom format and Tiled editor exports.
 
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::{Camera2D, Sprite, SpriteRegion};
+
+// ============================================================================
+// Tiled JSON format structures (for parsing Tiled exports)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct TiledMap {
+    width: u32,
+    height: u32,
+    tilewidth: u32,
+    tileheight: u32,
+    layers: Vec<TiledLayerUnion>,
+    tilesets: Vec<TiledTilesetRef>,
+}
+
+/// Tiled layer can be tile layer or object layer
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum TiledLayerUnion {
+    #[serde(rename = "tilelayer")]
+    TileLayer(TiledTileLayer),
+    #[serde(rename = "objectgroup")]
+    ObjectGroup(TiledObjectGroup),
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledTileLayer {
+    name: String,
+    width: u32,
+    height: u32,
+    data: Vec<u32>,
+    #[serde(default = "default_visible")]
+    visible: bool,
+    #[serde(default = "default_opacity")]
+    opacity: f32,
+    #[serde(default)]
+    properties: Vec<TiledProperty>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledObjectGroup {
+    name: String,
+    #[serde(default)]
+    objects: Vec<TiledObject>,
+    #[serde(default = "default_visible")]
+    visible: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledObject {
+    #[serde(default)]
+    name: String,
+    x: f32,
+    y: f32,
+    #[serde(default)]
+    width: Option<f32>,
+    #[serde(default)]
+    height: Option<f32>,
+    #[serde(default, rename = "type")]
+    obj_type: String,
+    #[serde(default)]
+    properties: Vec<TiledProperty>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledProperty {
+    name: String,
+    #[serde(default, rename = "type")]
+    prop_type: String,
+    value: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledTilesetRef {
+    firstgid: u32,
+    #[serde(default)]
+    source: Option<String>,
+    // Embedded tileset fields (when not using external .tsx)
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    tilewidth: Option<u32>,
+    #[serde(default)]
+    tileheight: Option<u32>,
+    #[serde(default)]
+    columns: Option<u32>,
+    #[serde(default)]
+    tilecount: Option<u32>,
+    #[serde(default)]
+    imagewidth: Option<u32>,
+    #[serde(default)]
+    imageheight: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledExternalTileset {
+    name: String,
+    image: String,
+    tilewidth: u32,
+    tileheight: u32,
+    columns: u32,
+    tilecount: u32,
+    #[serde(default)]
+    imagewidth: Option<u32>,
+    #[serde(default)]
+    imageheight: Option<u32>,
+}
+
+// ============================================================================
+// Our internal format structures
+// ============================================================================
 
 /// A tileset definition (sprite sheet for tiles)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,15 +317,302 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
-    /// Load a tilemap from a JSON file
+    /// Load a tilemap from a JSON file (supports both custom and Tiled formats)
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, TilemapError> {
-        let contents = std::fs::read_to_string(path.as_ref())
+        let path = path.as_ref();
+        let contents = std::fs::read_to_string(path)
             .map_err(|e| TilemapError::IoError(e.to_string()))?;
 
-        let tilemap: Tilemap = serde_json::from_str(&contents)
-            .map_err(|e| TilemapError::ParseError(e.to_string()))?;
+        // Try our custom format first
+        if let Ok(tilemap) = serde_json::from_str::<Tilemap>(&contents) {
+            return Ok(tilemap);
+        }
 
-        Ok(tilemap)
+        // Try Tiled format
+        let tiled: TiledMap = serde_json::from_str(&contents)
+            .map_err(|e| TilemapError::ParseError(format!("Failed to parse as Tiled format: {}", e)))?;
+
+        // Convert Tiled format to our format
+        Self::from_tiled(tiled, path)
+    }
+
+    /// Convert a Tiled map to our internal format
+    fn from_tiled(tiled: TiledMap, map_path: &Path) -> Result<Self, TilemapError> {
+        let map_dir = map_path.parent().unwrap_or(Path::new("."));
+
+        // Convert tilesets and collect collision tile IDs
+        let mut tilesets = Vec::new();
+        let mut collision_tile_ids: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+        for ts_ref in &tiled.tilesets {
+            let (tileset, tile_collisions) = if let Some(source) = &ts_ref.source {
+                // External tileset (.tsx file) - need to load and parse it
+                let tsx_path = map_dir.join(source);
+                Self::load_external_tileset_with_collisions(&tsx_path, ts_ref.firstgid, map_dir)?
+            } else {
+                // Embedded tileset
+                let columns = ts_ref.columns.unwrap_or(1);
+                let tilecount = ts_ref.tilecount.unwrap_or(columns);
+                let rows = if columns > 0 { tilecount / columns } else { 1 };
+
+                let ts = Tileset {
+                    name: ts_ref.name.clone().unwrap_or_else(|| "tileset".to_string()),
+                    image: ts_ref.image.clone().unwrap_or_default(),
+                    tile_width: ts_ref.tilewidth.unwrap_or(16),
+                    tile_height: ts_ref.tileheight.unwrap_or(16),
+                    columns,
+                    rows,
+                    first_gid: ts_ref.firstgid,
+                };
+                (ts, Vec::new())
+            };
+
+            // Add collision tile IDs (local_id + first_gid)
+            for local_id in tile_collisions {
+                collision_tile_ids.insert(local_id + ts_ref.firstgid);
+            }
+
+            tilesets.push(tileset);
+        }
+
+        // Convert layers and extract spawns/triggers from object layers
+        let mut layers = Vec::new();
+        let mut spawns = Vec::new();
+        let mut triggers = Vec::new();
+
+        for layer in tiled.layers {
+            match layer {
+                TiledLayerUnion::TileLayer(tl) => {
+                    // Get z-index from properties (default to 0)
+                    let z_index = Self::get_property_int(&tl.properties, "z-index").unwrap_or(0);
+
+                    // Determine layer type: z-index >= 0 with high value = above, negative = below
+                    // Convention: z-index < 0 = below entities, z-index >= 100 = above entities
+                    let layer_type = if z_index >= 100 {
+                        LayerType::Above
+                    } else if tl.name.to_lowercase().contains("above")
+                        || tl.name.to_lowercase().contains("over")
+                        || tl.name.to_lowercase().contains("roof") {
+                        LayerType::Above
+                    } else {
+                        LayerType::Below
+                    };
+
+                    layers.push(TileLayer {
+                        name: tl.name,
+                        width: tl.width,
+                        height: tl.height,
+                        data: tl.data,
+                        visible: tl.visible,
+                        opacity: tl.opacity,
+                        z_order: z_index,
+                        layer_type,
+                    });
+                }
+                TiledLayerUnion::ObjectGroup(og) => {
+                    // Parse objects based on layer name or object type
+                    let layer_name_lower = og.name.to_lowercase();
+
+                    for obj in og.objects {
+                        let obj_type_lower = obj.obj_type.to_lowercase();
+
+                        if layer_name_lower.contains("spawn") || obj_type_lower == "spawn" {
+                            // Spawn point
+                            let id = if obj.name.is_empty() { "default".to_string() } else { obj.name };
+                            spawns.push(SpawnPoint { id, x: obj.x, y: obj.y });
+                        } else if layer_name_lower.contains("trigger") || obj_type_lower == "trigger" {
+                            // Trigger zone
+                            if let (Some(w), Some(h)) = (obj.width, obj.height) {
+                                let target_map = Self::get_property_string(&obj.properties, "target_map")
+                                    .unwrap_or_default();
+                                let target_spawn = Self::get_property_string(&obj.properties, "target_spawn")
+                                    .unwrap_or_else(|| "default".to_string());
+
+                                triggers.push(Trigger {
+                                    x: obj.x,
+                                    y: obj.y,
+                                    width: w,
+                                    height: h,
+                                    target_map,
+                                    target_spawn,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Build collision array from tile data and collision tile IDs
+        let map_size = (tiled.width * tiled.height) as usize;
+        let mut collision = vec![false; map_size];
+
+        if !collision_tile_ids.is_empty() {
+            for layer in &layers {
+                for (i, &tile_id) in layer.data.iter().enumerate() {
+                    if collision_tile_ids.contains(&tile_id) {
+                        collision[i] = true;
+                    }
+                }
+            }
+        }
+
+        // Extract map name from filename
+        let name = map_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed")
+            .to_string();
+
+        Ok(Tilemap {
+            name,
+            width: tiled.width,
+            height: tiled.height,
+            tile_width: tiled.tilewidth,
+            tile_height: tiled.tileheight,
+            tilesets,
+            layers,
+            collision,
+            spawns,
+            triggers,
+        })
+    }
+
+    /// Get string property from Tiled properties array
+    fn get_property_string(props: &[TiledProperty], name: &str) -> Option<String> {
+        props.iter()
+            .find(|p| p.name == name)
+            .and_then(|p| p.value.as_str().map(|s| s.to_string()))
+    }
+
+    /// Get integer property from Tiled properties array
+    fn get_property_int(props: &[TiledProperty], name: &str) -> Option<i32> {
+        props.iter()
+            .find(|p| p.name == name)
+            .and_then(|p| p.value.as_i64().map(|v| v as i32))
+    }
+
+    /// Load an external .tsx tileset file with collision data
+    /// Returns (Tileset, Vec<local_tile_ids_with_collision>)
+    fn load_external_tileset_with_collisions(tsx_path: &Path, first_gid: u32, map_dir: &Path) -> Result<(Tileset, Vec<u32>), TilemapError> {
+        let contents = std::fs::read_to_string(tsx_path)
+            .map_err(|e| TilemapError::IoError(format!("Failed to load tileset {}: {}", tsx_path.display(), e)))?;
+
+        // Try JSON format first
+        if let Ok(ts) = serde_json::from_str::<TiledExternalTileset>(&contents) {
+            let rows = if ts.columns > 0 { ts.tilecount / ts.columns } else { 1 };
+
+            // Resolve image path relative to map directory
+            let image_path = map_dir.join(&ts.image);
+            let image = image_path.to_string_lossy().to_string();
+
+            let tileset = Tileset {
+                name: ts.name,
+                image,
+                tile_width: ts.tilewidth,
+                tile_height: ts.tileheight,
+                columns: ts.columns,
+                rows,
+                first_gid,
+            };
+            // JSON format doesn't have inline collision - would need separate parsing
+            return Ok((tileset, Vec::new()));
+        }
+
+        // Try XML format (.tsx files are usually XML)
+        Self::parse_tsx_xml_with_collisions(&contents, first_gid, map_dir)
+    }
+
+    /// Parse XML .tsx tileset file with collision data
+    fn parse_tsx_xml_with_collisions(contents: &str, first_gid: u32, map_dir: &Path) -> Result<(Tileset, Vec<u32>), TilemapError> {
+        // Simple XML parsing for <tileset> and <image> tags
+        let name = Self::extract_xml_attr(contents, "tileset", "name")
+            .unwrap_or_else(|| "tileset".to_string());
+        let tile_width: u32 = Self::extract_xml_attr(contents, "tileset", "tilewidth")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(16);
+        let tile_height: u32 = Self::extract_xml_attr(contents, "tileset", "tileheight")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(16);
+        let columns: u32 = Self::extract_xml_attr(contents, "tileset", "columns")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
+        let tilecount: u32 = Self::extract_xml_attr(contents, "tileset", "tilecount")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(columns);
+
+        let image_source = Self::extract_xml_attr(contents, "image", "source")
+            .unwrap_or_default();
+
+        // Resolve image path relative to map directory
+        let image_path = map_dir.join(&image_source);
+        let image = image_path.to_string_lossy().to_string();
+
+        let rows = if columns > 0 { tilecount / columns } else { 1 };
+
+        // Extract tiles with collision (tiles that have <objectgroup> children)
+        let collision_tiles = Self::extract_collision_tile_ids(contents);
+
+        let tileset = Tileset {
+            name,
+            image,
+            tile_width,
+            tile_height,
+            columns,
+            rows,
+            first_gid,
+        };
+
+        Ok((tileset, collision_tiles))
+    }
+
+    /// Extract tile IDs that have collision defined (contain <objectgroup>)
+    fn extract_collision_tile_ids(xml: &str) -> Vec<u32> {
+        let mut collision_ids = Vec::new();
+
+        // Find all <tile id="X"> tags that contain <objectgroup>
+        let mut search_pos = 0;
+        while let Some(tile_start) = xml[search_pos..].find("<tile ") {
+            let tile_start = search_pos + tile_start;
+
+            // Find the end of this tile element
+            let tile_end = if let Some(end) = xml[tile_start..].find("</tile>") {
+                tile_start + end + 7
+            } else if let Some(end) = xml[tile_start..].find("/>") {
+                tile_start + end + 2
+            } else {
+                break;
+            };
+
+            let tile_content = &xml[tile_start..tile_end];
+
+            // Check if this tile has an objectgroup (collision)
+            if tile_content.contains("<objectgroup") {
+                // Extract the tile id
+                if let Some(id) = Self::extract_xml_attr(tile_content, "tile", "id") {
+                    if let Ok(tile_id) = id.parse::<u32>() {
+                        collision_ids.push(tile_id);
+                    }
+                }
+            }
+
+            search_pos = tile_end;
+        }
+
+        collision_ids
+    }
+
+    /// Simple XML attribute extraction (no full XML parser needed)
+    fn extract_xml_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
+        let tag_start = xml.find(&format!("<{}", tag))?;
+        let tag_end = xml[tag_start..].find('>')? + tag_start;
+        let tag_content = &xml[tag_start..tag_end];
+
+        let attr_pattern = format!("{}=\"", attr);
+        let attr_start = tag_content.find(&attr_pattern)? + attr_pattern.len();
+        let attr_end = tag_content[attr_start..].find('"')? + attr_start;
+
+        Some(tag_content[attr_start..attr_end].to_string())
     }
 
     /// Get the pixel dimensions of the map

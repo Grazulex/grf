@@ -370,7 +370,7 @@ impl Game {
         self.world.insert_resource(Inventory::default());
 
         // Load the starting map
-        self.load_map("assets/maps/test.json", "default");
+        self.load_map("game/assets/Tilesets/test.json", "default");
 
         // Switch to playing state
         self.game_state = GameState::Playing;
@@ -601,8 +601,8 @@ impl App for Game {
             info!("Debug tools initialized (F12 to toggle)");
         }
 
-        // Load tilemap
-        let player_start = match Tilemap::load("assets/maps/test.json") {
+        // Load tilemap (Tiled export)
+        let player_start = match Tilemap::load("game/assets/Tilesets/test.json") {
             Ok(tilemap) => {
                 // Load tileset texture
                 if let Some(tileset) = tilemap.tilesets.first() {
@@ -618,13 +618,13 @@ impl App for Game {
                 let start = Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
 
                 #[cfg(feature = "debug-tools")]
-                self.debug_overlay.log_system(0.0, format!("Map loaded: test.json ({}x{})", w, h));
+                self.debug_overlay.log_system(0.0, format!("Map loaded: test.json ({}x{}) - Tiled format", w, h));
 
                 // Store tilemap as resource
                 self.world.insert_resource(tilemap);
 
                 // Store current map for save system
-                self.current_map = "assets/maps/test.json".to_string();
+                self.current_map = "game/assets/Tilesets/test.json".to_string();
 
                 start
             }
@@ -673,7 +673,7 @@ impl App for Game {
         self.world.insert(player, PlayerControlled::new(walk_speed));
         self.world.insert(player, CameraTarget);
         self.world.insert(player, SpriteRender::new(32.0, 32.0));
-        self.world.insert(player, Collider::new(32.0, 32.0));
+        self.world.insert(player, Collider::new(12.0, 8.0)); // Small hitbox at feet
         self.player_entity = Some(player);
 
         // Initialize camera as resource
