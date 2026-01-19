@@ -30,6 +30,7 @@ impl SaveManager {
     }
 
     /// Create save manager with custom path
+    #[allow(dead_code)]
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         Self {
             save_path: path.into(),
@@ -118,6 +119,7 @@ impl SaveManager {
     }
 
     /// Check if a save slot exists
+    #[allow(dead_code)]
     pub fn slot_exists(&self, slot: usize) -> bool {
         if slot >= MAX_SAVE_SLOTS {
             return false;
@@ -126,6 +128,7 @@ impl SaveManager {
     }
 
     /// Get list of existing save slots with metadata
+    #[allow(dead_code)]
     pub fn list_saves(&self) -> Vec<SaveSlotInfo> {
         (0..MAX_SAVE_SLOTS)
             .filter_map(|slot| {
@@ -148,6 +151,7 @@ impl SaveManager {
     }
 
     /// Delete a save slot
+    #[allow(dead_code)]
     pub fn delete(&self, slot: usize) -> Result<()> {
         if slot >= MAX_SAVE_SLOTS {
             anyhow::bail!("Invalid save slot: {}", slot);
@@ -170,6 +174,7 @@ impl SaveManager {
     }
 
     /// Restore save from backup
+    #[allow(dead_code)]
     pub fn restore_backup(&self, slot: usize) -> Result<()> {
         if slot >= MAX_SAVE_SLOTS {
             anyhow::bail!("Invalid save slot: {}", slot);
@@ -197,6 +202,7 @@ impl Default for SaveManager {
 }
 
 /// Information about a save slot
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct SaveSlotInfo {
     /// Slot number

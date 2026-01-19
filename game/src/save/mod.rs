@@ -6,5 +6,11 @@
 mod save_data;
 mod save_manager;
 
-pub use save_data::{GameClockData, PlayerData, SaveData, SAVE_VERSION};
-pub use save_manager::{SaveManager, SaveSlotInfo, MAX_SAVE_SLOTS};
+pub use save_data::{GameClockData, PlayerData, SaveData};
+pub use save_manager::SaveManager;
+
+// Re-exports for future save menu implementation
+#[allow(unused_imports)]
+pub use save_data::SAVE_VERSION;
+#[allow(unused_imports)]
+pub use save_manager::{SaveSlotInfo, MAX_SAVE_SLOTS};

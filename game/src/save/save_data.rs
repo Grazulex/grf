@@ -98,6 +98,7 @@ impl PlayerData {
     }
 
     /// Create Velocity component (zeroed)
+    #[allow(dead_code)]
     pub fn to_velocity(&self) -> Velocity {
         Velocity::default()
     }
