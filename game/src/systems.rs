@@ -4,11 +4,14 @@
 
 use engine_core::FIXED_TIMESTEP;
 use engine_ecs::World;
-use engine_input::Input;
+use engine_input::{Input, KeyCode};
 use engine_physics::AABB;
 use engine_render::{Camera2D, Tilemap};
 
 use crate::components::{CameraTarget, Collider, PlayerControlled, Position, Velocity};
+
+/// Run speed multiplier when holding Shift
+const RUN_MULTIPLIER: f32 = 1.8;
 
 /// Input system: reads input and sets velocity for player-controlled entities
 pub fn input_system(world: &mut World) {
@@ -21,6 +24,10 @@ pub fn input_system(world: &mut World) {
     // Get movement direction from input
     let direction = input.get_movement_direction();
 
+    // Check if running (Shift held)
+    let is_running = input.is_key_pressed(KeyCode::LShift) || input.is_key_pressed(KeyCode::RShift);
+    let speed_multiplier = if is_running { RUN_MULTIPLIER } else { 1.0 };
+
     // We need to collect entity data first, then modify
     // This avoids borrowing issues
     let entities_to_update: Vec<_> = world
@@ -29,8 +36,9 @@ pub fn input_system(world: &mut World) {
         .collect();
 
     // Update velocities
-    for (entity, speed) in entities_to_update {
+    for (entity, base_speed) in entities_to_update {
         if let Some(vel) = world.get_mut::<Velocity>(entity) {
+            let speed = base_speed * speed_multiplier;
             vel.x = direction.x * speed;
             vel.y = direction.y * speed;
         }

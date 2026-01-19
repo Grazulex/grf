@@ -702,7 +702,7 @@ impl App for Game {
         let player = self.world.spawn();
         self.world.insert(player, Position::from_vec2(player_start));
         self.world.insert(player, Velocity::default());
-        self.world.insert(player, PlayerControlled::new(300.0));
+        self.world.insert(player, PlayerControlled::new(120.0)); // Walk speed in pixels/sec
         self.world.insert(player, CameraTarget);
         self.world.insert(player, SpriteRender::new(32.0, 32.0));
         self.world.insert(player, Collider::new(32.0, 32.0));
@@ -1139,19 +1139,38 @@ impl App for Game {
                                 // Flush below layers
                                 renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
-                                // 2. Render player in SEPARATE batch (testing fix for multiple batches)
+                                // 2. Render player with animation texture in SEPARATE batch
                                 let alpha = self.game_time.alpha() as f32;
                                 for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
                                     if let Some(pos) = self.world.get::<Position>(entity) {
                                         let render_pos = pos.interpolated(alpha);
-                                        let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
-                                        sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
+
+                                        // Create sprite with animation region
+                                        let mut sprite = Sprite::new(render_pos, Vec2::new(32.0, 32.0));
+                                        if let Some(region) = self.player_animations.current_sprite_region() {
+                                            sprite.region = region;
+                                        }
+
+                                        // Handle horizontal flip for left-facing direction
+                                        if self.player_animations.flip_x {
+                                            // Swap u coordinates to flip horizontally
+                                            std::mem::swap(&mut sprite.region.u_min, &mut sprite.region.u_max);
+                                        }
+
                                         renderer.draw_sprite(&sprite);
                                     }
                                 }
 
-                                // Flush player (separate batch - uses flush_sprites_no_clear to preserve below layers)
-                                renderer.flush_sprites_no_clear(&mut frame, self.tileset_bind_group.as_ref());
+                                // Get the correct texture based on player state
+                                let player_bind_group = match self.player_animations.current_texture_name() {
+                                    "player_idle" => self.player_idle_bind_group.as_ref(),
+                                    "player_walk" => self.player_walk_bind_group.as_ref(),
+                                    "player_run" => self.player_run_bind_group.as_ref(),
+                                    _ => self.player_idle_bind_group.as_ref(),
+                                };
+
+                                // Flush player with animation texture
+                                renderer.flush_sprites_no_clear(&mut frame, player_bind_group);
 
                                 // 3. Render layers ABOVE entities
                                 for layer_idx in tilemap.above_layers() {

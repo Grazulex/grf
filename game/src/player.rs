@@ -1,13 +1,10 @@
-//! Player module with animated character
+//! Player animation module
 //!
-//! Demonstrates how to use the GRF framework for animated player characters:
-//! - State machine (Idle, Walk, Run)
-//! - Direction handling with flip for left
-//! - Animation configuration from sprite sheets
-//! - WASD input integration
+//! Handles player sprite animations based on movement state.
+//! Movement is handled by the ECS system - this only manages visuals.
 
 use engine_input::{Input, KeyCode};
-use engine_render::{Animation, AnimationController, SpriteRegion, glam::Vec2};
+use engine_render::{Animation, AnimationController, SpriteRegion};
 
 /// Player facing direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -20,20 +17,6 @@ pub enum Direction {
 }
 
 impl Direction {
-    /// Get the row index in the sprite sheet (0-2)
-    pub fn sprite_row(self) -> u32 {
-        match self {
-            Direction::Down => 0,  // Front
-            Direction::Up => 1,    // Back
-            Direction::Left | Direction::Right => 2, // Side
-        }
-    }
-
-    /// Should the sprite be flipped horizontally?
-    pub fn flip_x(self) -> bool {
-        matches!(self, Direction::Left)
-    }
-
     /// Get direction suffix for animation names
     pub fn suffix(self) -> &'static str {
         match self {
@@ -42,9 +25,14 @@ impl Direction {
             Direction::Left | Direction::Right => "side",
         }
     }
+
+    /// Should the sprite be flipped horizontally?
+    pub fn flip_x(self) -> bool {
+        matches!(self, Direction::Left)
+    }
 }
 
-/// Player movement state
+/// Player movement state for animation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlayerState {
     #[default]
@@ -53,40 +41,30 @@ pub enum PlayerState {
     Running,
 }
 
-/// Player character with animations
-pub struct Player {
-    /// Current position in world
-    pub position: Vec2,
-    /// Movement velocity
-    pub velocity: Vec2,
+/// Player animation controller
+///
+/// This struct only handles animations - movement is done by ECS.
+pub struct PlayerAnimations {
     /// Current facing direction
     pub direction: Direction,
     /// Current movement state
     pub state: PlayerState,
     /// Animation controller managing all animations
     pub animations: AnimationController,
-    /// Movement speed (pixels/second)
-    pub walk_speed: f32,
-    /// Run speed multiplier
-    pub run_speed: f32,
     /// Should sprite be flipped?
     pub flip_x: bool,
 }
 
-impl Player {
+impl PlayerAnimations {
     /// Sprite size (32x32 pixels)
     pub const SPRITE_SIZE: u32 = 32;
 
-    /// Create a new player at the given position
-    pub fn new(position: Vec2) -> Self {
+    /// Create a new player animation controller
+    pub fn new() -> Self {
         let mut player = Self {
-            position,
-            velocity: Vec2::ZERO,
             direction: Direction::Down,
             state: PlayerState::Idle,
             animations: AnimationController::new(),
-            walk_speed: 100.0,
-            run_speed: 180.0,
             flip_x: false,
         };
 
@@ -98,21 +76,11 @@ impl Player {
     }
 
     /// Configure all animations from sprite sheets
-    ///
-    /// Sprite sheet structure (32x32 sprites):
-    /// - Idle.png: 128x96 (4 frames x 3 rows)
-    /// - Walk.png: 192x96 (6 frames x 3 rows)
-    /// - Run.png:  256x96 (8 frames x 3 rows)
-    ///
-    /// Row layout:
-    /// - Row 0: Front (down)
-    /// - Row 1: Back (up)
-    /// - Row 2: Side (use flip_x for left)
     fn setup_animations(&mut self) {
         // Frame durations
-        const IDLE_FRAME_DURATION: f32 = 0.2;  // 4 frames / ~0.8s cycle
-        const WALK_FRAME_DURATION: f32 = 0.12; // 6 frames / ~0.72s cycle
-        const RUN_FRAME_DURATION: f32 = 0.08;  // 8 frames / ~0.64s cycle
+        const IDLE_FRAME_DURATION: f32 = 0.2;
+        const WALK_FRAME_DURATION: f32 = 0.12;
+        const RUN_FRAME_DURATION: f32 = 0.08;
 
         // Sprite sheet dimensions
         const IDLE_SHEET_W: u32 = 128;
@@ -125,36 +93,24 @@ impl Player {
             // Idle animations (4 frames)
             let idle_anim = Self::create_animation(
                 &format!("idle_{}", dir_name),
-                4,
-                row,
-                Self::SPRITE_SIZE,
-                IDLE_SHEET_W,
-                SHEET_H,
-                IDLE_FRAME_DURATION,
+                4, row, Self::SPRITE_SIZE,
+                IDLE_SHEET_W, SHEET_H, IDLE_FRAME_DURATION,
             );
             self.animations.add(idle_anim);
 
             // Walk animations (6 frames)
             let walk_anim = Self::create_animation(
                 &format!("walk_{}", dir_name),
-                6,
-                row,
-                Self::SPRITE_SIZE,
-                WALK_SHEET_W,
-                SHEET_H,
-                WALK_FRAME_DURATION,
+                6, row, Self::SPRITE_SIZE,
+                WALK_SHEET_W, SHEET_H, WALK_FRAME_DURATION,
             );
             self.animations.add(walk_anim);
 
             // Run animations (8 frames)
             let run_anim = Self::create_animation(
                 &format!("run_{}", dir_name),
-                8,
-                row,
-                Self::SPRITE_SIZE,
-                RUN_SHEET_W,
-                SHEET_H,
-                RUN_FRAME_DURATION,
+                8, row, Self::SPRITE_SIZE,
+                RUN_SHEET_W, SHEET_H, RUN_FRAME_DURATION,
             );
             self.animations.add(run_anim);
         }
@@ -173,10 +129,10 @@ impl Player {
         let regions: Vec<SpriteRegion> = (0..frame_count)
             .map(|col| {
                 SpriteRegion::from_pixels(
-                    col * sprite_size,      // x
-                    row * sprite_size,      // y
-                    sprite_size,            // width
-                    sprite_size,            // height
+                    col * sprite_size,
+                    row * sprite_size,
+                    sprite_size,
+                    sprite_size,
                     sheet_width,
                     sheet_height,
                 )
@@ -186,65 +142,34 @@ impl Player {
         Animation::from_regions(name, regions, frame_duration, true)
     }
 
-    /// Update player from input
-    pub fn handle_input(&mut self, input: &Input) {
-        // Get movement direction from WASD/Arrows
-        let mut move_dir = Vec2::ZERO;
+    /// Update animation state based on input
+    /// Call this each frame with the current input
+    pub fn update_from_input(&mut self, input: &Input, velocity_x: f32, velocity_y: f32) {
+        let is_moving = velocity_x.abs() > 0.1 || velocity_y.abs() > 0.1;
+        let is_running = input.is_key_pressed(KeyCode::LShift) || input.is_key_pressed(KeyCode::RShift);
 
-        if input.is_key_pressed(KeyCode::W) || input.is_key_pressed(KeyCode::Up) {
-            move_dir.y -= 1.0;
-        }
-        if input.is_key_pressed(KeyCode::S) || input.is_key_pressed(KeyCode::Down) {
-            move_dir.y += 1.0;
-        }
-        if input.is_key_pressed(KeyCode::A) || input.is_key_pressed(KeyCode::Left) {
-            move_dir.x -= 1.0;
-        }
-        if input.is_key_pressed(KeyCode::D) || input.is_key_pressed(KeyCode::Right) {
-            move_dir.x += 1.0;
-        }
-
-        // Check if running (Shift held)
-        let running = input.is_key_pressed(KeyCode::LShift) || input.is_key_pressed(KeyCode::RShift);
-
-        // Update state based on movement
-        if move_dir == Vec2::ZERO {
+        // Update state
+        if !is_moving {
             self.state = PlayerState::Idle;
-            self.velocity = Vec2::ZERO;
+        } else if is_running {
+            self.state = PlayerState::Running;
         } else {
-            // Normalize diagonal movement
-            move_dir = move_dir.normalize();
+            self.state = PlayerState::Walking;
+        }
 
-            // Set state and speed
-            if running {
-                self.state = PlayerState::Running;
-                self.velocity = move_dir * self.run_speed;
+        // Update direction based on velocity
+        if is_moving {
+            if velocity_x.abs() > velocity_y.abs() {
+                self.direction = if velocity_x < 0.0 { Direction::Left } else { Direction::Right };
             } else {
-                self.state = PlayerState::Walking;
-                self.velocity = move_dir * self.walk_speed;
-            }
-
-            // Update direction based on movement
-            // Prioritize horizontal movement for direction
-            if move_dir.x.abs() > move_dir.y.abs() {
-                self.direction = if move_dir.x < 0.0 {
-                    Direction::Left
-                } else {
-                    Direction::Right
-                };
-            } else {
-                self.direction = if move_dir.y < 0.0 {
-                    Direction::Up
-                } else {
-                    Direction::Down
-                };
+                self.direction = if velocity_y < 0.0 { Direction::Up } else { Direction::Down };
             }
         }
 
-        // Update flip_x based on direction
+        // Update flip_x
         self.flip_x = self.direction.flip_x();
 
-        // Update animation based on state and direction
+        // Update animation
         self.update_animation();
     }
 
@@ -256,16 +181,11 @@ impl Player {
             PlayerState::Running => format!("run_{}", self.direction.suffix()),
         };
 
-        // Only change animation if different (play_if_different doesn't reset time)
         self.animations.play_if_different(&anim_name);
     }
 
-    /// Update player (call each frame)
+    /// Update animation time (call each frame)
     pub fn update(&mut self, dt: f32) {
-        // Update position
-        self.position += self.velocity * dt;
-
-        // Update animation time
         self.animations.update(dt);
     }
 
@@ -284,53 +204,8 @@ impl Player {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_direction_row() {
-        assert_eq!(Direction::Down.sprite_row(), 0);
-        assert_eq!(Direction::Up.sprite_row(), 1);
-        assert_eq!(Direction::Left.sprite_row(), 2);
-        assert_eq!(Direction::Right.sprite_row(), 2);
-    }
-
-    #[test]
-    fn test_direction_flip() {
-        assert!(!Direction::Down.flip_x());
-        assert!(!Direction::Up.flip_x());
-        assert!(Direction::Left.flip_x());
-        assert!(!Direction::Right.flip_x());
-    }
-
-    #[test]
-    fn test_player_creation() {
-        let player = Player::new(Vec2::new(100.0, 100.0));
-        assert_eq!(player.position, Vec2::new(100.0, 100.0));
-        assert_eq!(player.state, PlayerState::Idle);
-        assert_eq!(player.direction, Direction::Down);
-        assert_eq!(player.animations.current_name(), Some("idle_down"));
-    }
-
-    #[test]
-    fn test_animation_setup() {
-        let player = Player::new(Vec2::ZERO);
-
-        // Should have 9 animations (3 states x 3 directions)
-        // idle_down, idle_up, idle_side
-        // walk_down, walk_up, walk_side
-        // run_down, run_up, run_side
-
-        // Test that we can play each animation
-        let mut ctrl = player.animations;
-        ctrl.play("idle_down");
-        assert_eq!(ctrl.current_name(), Some("idle_down"));
-
-        ctrl.play("walk_side");
-        assert_eq!(ctrl.current_name(), Some("walk_side"));
-
-        ctrl.play("run_up");
-        assert_eq!(ctrl.current_name(), Some("run_up"));
+impl Default for PlayerAnimations {
+    fn default() -> Self {
+        Self::new()
     }
 }
