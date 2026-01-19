@@ -23,7 +23,7 @@ struct TiledMap {
     tilesets: Vec<TiledTilesetRef>,
 }
 
-/// Tiled layer can be tile layer or object layer
+/// Tiled layer can be tile layer, object layer, or group
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 enum TiledLayerUnion {
@@ -31,6 +31,17 @@ enum TiledLayerUnion {
     TileLayer(TiledTileLayer),
     #[serde(rename = "objectgroup")]
     ObjectGroup(TiledObjectGroup),
+    #[serde(rename = "group")]
+    Group(TiledGroup),
+}
+
+#[derive(Debug, Deserialize)]
+struct TiledGroup {
+    name: String,
+    #[serde(default)]
+    layers: Vec<TiledLayerUnion>,
+    #[serde(default = "default_visible")]
+    visible: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,7 +329,29 @@ pub struct Tilemap {
 
 impl Tilemap {
     /// Load a tilemap from a JSON file (supports both custom and Tiled formats)
+    ///
+    /// For Tiled maps, uses "back" and "front" as default group names for layer ordering.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, TilemapError> {
+        Self::load_with_groups(path, "back", "front")
+    }
+
+    /// Load a tilemap with custom group names for layer ordering
+    ///
+    /// # Arguments
+    /// * `path` - Path to the tilemap JSON file
+    /// * `back_group` - Name of the group for layers rendered behind entities (e.g., "back", "below", "ground")
+    /// * `front_group` - Name of the group for layers rendered in front of entities (e.g., "front", "above", "overlay")
+    ///
+    /// # Example
+    /// ```ignore
+    /// // In Tiled, create groups named "below" and "overlay"
+    /// let tilemap = Tilemap::load_with_groups("map.json", "below", "overlay")?;
+    /// ```
+    pub fn load_with_groups<P: AsRef<Path>>(
+        path: P,
+        back_group: &str,
+        front_group: &str,
+    ) -> Result<Self, TilemapError> {
         let path = path.as_ref();
         let contents = std::fs::read_to_string(path)
             .map_err(|e| TilemapError::IoError(e.to_string()))?;
@@ -333,11 +366,20 @@ impl Tilemap {
             .map_err(|e| TilemapError::ParseError(format!("Failed to parse as Tiled format: {}", e)))?;
 
         // Convert Tiled format to our format
-        Self::from_tiled(tiled, path)
+        Self::from_tiled_with_groups(tiled, path, back_group, front_group)
     }
 
-    /// Convert a Tiled map to our internal format
-    fn from_tiled(tiled: TiledMap, map_path: &Path) -> Result<Self, TilemapError> {
+    /// Convert a Tiled map to our internal format with configurable group names
+    ///
+    /// # Arguments
+    /// * `back_group` - Name of the group containing layers below entities (e.g., "back", "below")
+    /// * `front_group` - Name of the group containing layers above entities (e.g., "front", "above")
+    fn from_tiled_with_groups(
+        tiled: TiledMap,
+        map_path: &Path,
+        back_group: &str,
+        front_group: &str,
+    ) -> Result<Self, TilemapError> {
         let map_dir = map_path.parent().unwrap_or(Path::new("."));
 
         // Convert tilesets and collect collision tile IDs
@@ -380,68 +422,16 @@ impl Tilemap {
         let mut spawns = Vec::new();
         let mut triggers = Vec::new();
 
-        for layer in tiled.layers {
-            match layer {
-                TiledLayerUnion::TileLayer(tl) => {
-                    // Get z-index from properties (default to 0)
-                    let z_index = Self::get_property_int(&tl.properties, "z-index").unwrap_or(0);
-
-                    // Determine layer type: z-index >= 0 with high value = above, negative = below
-                    // Convention: z-index < 0 = below entities, z-index >= 100 = above entities
-                    let layer_type = if z_index >= 100 {
-                        LayerType::Above
-                    } else if tl.name.to_lowercase().contains("above")
-                        || tl.name.to_lowercase().contains("over")
-                        || tl.name.to_lowercase().contains("roof") {
-                        LayerType::Above
-                    } else {
-                        LayerType::Below
-                    };
-
-                    layers.push(TileLayer {
-                        name: tl.name,
-                        width: tl.width,
-                        height: tl.height,
-                        data: tl.data,
-                        visible: tl.visible,
-                        opacity: tl.opacity,
-                        z_order: z_index,
-                        layer_type,
-                    });
-                }
-                TiledLayerUnion::ObjectGroup(og) => {
-                    // Parse objects based on layer name or object type
-                    let layer_name_lower = og.name.to_lowercase();
-
-                    for obj in og.objects {
-                        let obj_type_lower = obj.obj_type.to_lowercase();
-
-                        if layer_name_lower.contains("spawn") || obj_type_lower == "spawn" {
-                            // Spawn point
-                            let id = if obj.name.is_empty() { "default".to_string() } else { obj.name };
-                            spawns.push(SpawnPoint { id, x: obj.x, y: obj.y });
-                        } else if layer_name_lower.contains("trigger") || obj_type_lower == "trigger" {
-                            // Trigger zone
-                            if let (Some(w), Some(h)) = (obj.width, obj.height) {
-                                let target_map = Self::get_property_string(&obj.properties, "target_map")
-                                    .unwrap_or_default();
-                                let target_spawn = Self::get_property_string(&obj.properties, "target_spawn")
-                                    .unwrap_or_else(|| "default".to_string());
-
-                                triggers.push(Trigger {
-                                    x: obj.x,
-                                    y: obj.y,
-                                    width: w,
-                                    height: h,
-                                    target_map,
-                                    target_spawn,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Process all layers recursively (handles groups)
+        Self::process_layers_recursive(
+            &tiled.layers,
+            &mut layers,
+            &mut spawns,
+            &mut triggers,
+            None, // No parent group initially
+            back_group,
+            front_group,
+        );
 
         // Build collision array from tile data and collision tile IDs
         let map_size = (tiled.width * tiled.height) as usize;
@@ -490,6 +480,127 @@ impl Tilemap {
         props.iter()
             .find(|p| p.name == name)
             .and_then(|p| p.value.as_i64().map(|v| v as i32))
+    }
+
+    /// Recursively process Tiled layers, handling groups to determine layer type
+    ///
+    /// Layers inside a group named `back_group` are marked as Below (rendered behind entities).
+    /// Layers inside a group named `front_group` are marked as Above (rendered in front of entities).
+    /// Layers not in any recognized group default to Below.
+    fn process_layers_recursive(
+        tiled_layers: &[TiledLayerUnion],
+        layers: &mut Vec<TileLayer>,
+        spawns: &mut Vec<SpawnPoint>,
+        triggers: &mut Vec<Trigger>,
+        parent_group: Option<&str>,
+        back_group: &str,
+        front_group: &str,
+    ) {
+        for (idx, layer) in tiled_layers.iter().enumerate() {
+            match layer {
+                TiledLayerUnion::TileLayer(tl) => {
+                    if !tl.visible {
+                        continue;
+                    }
+
+                    // Get z-index from properties, or use index within group for ordering
+                    let z_index = Self::get_property_int(&tl.properties, "z-index")
+                        .unwrap_or(idx as i32);
+
+                    // Determine layer type based on parent group name
+                    let layer_type = match parent_group {
+                        Some(name) if name.eq_ignore_ascii_case(front_group) => LayerType::Above,
+                        Some(name) if name.eq_ignore_ascii_case(back_group) => LayerType::Below,
+                        _ => {
+                            // Fallback: check layer name or z-index for backwards compatibility
+                            if z_index >= 100 {
+                                LayerType::Above
+                            } else if tl.name.to_lowercase().contains("above")
+                                || tl.name.to_lowercase().contains("over")
+                                || tl.name.to_lowercase().contains("roof")
+                                || tl.name.to_lowercase().contains("front")
+                            {
+                                LayerType::Above
+                            } else {
+                                LayerType::Below
+                            }
+                        }
+                    };
+
+                    layers.push(TileLayer {
+                        name: tl.name.clone(),
+                        width: tl.width,
+                        height: tl.height,
+                        data: tl.data.clone(),
+                        visible: tl.visible,
+                        opacity: tl.opacity,
+                        z_order: z_index,
+                        layer_type,
+                    });
+                }
+                TiledLayerUnion::ObjectGroup(og) => {
+                    if !og.visible {
+                        continue;
+                    }
+
+                    // Parse objects based on layer name or object type
+                    let layer_name_lower = og.name.to_lowercase();
+
+                    for obj in &og.objects {
+                        let obj_type_lower = obj.obj_type.to_lowercase();
+
+                        if layer_name_lower.contains("spawn") || obj_type_lower == "spawn" {
+                            // Spawn point
+                            let id = if obj.name.is_empty() {
+                                "default".to_string()
+                            } else {
+                                obj.name.clone()
+                            };
+                            spawns.push(SpawnPoint {
+                                id,
+                                x: obj.x,
+                                y: obj.y,
+                            });
+                        } else if layer_name_lower.contains("trigger") || obj_type_lower == "trigger" {
+                            // Trigger zone
+                            if let (Some(w), Some(h)) = (obj.width, obj.height) {
+                                let target_map =
+                                    Self::get_property_string(&obj.properties, "target_map")
+                                        .unwrap_or_default();
+                                let target_spawn =
+                                    Self::get_property_string(&obj.properties, "target_spawn")
+                                        .unwrap_or_else(|| "default".to_string());
+
+                                triggers.push(Trigger {
+                                    x: obj.x,
+                                    y: obj.y,
+                                    width: w,
+                                    height: h,
+                                    target_map,
+                                    target_spawn,
+                                });
+                            }
+                        }
+                    }
+                }
+                TiledLayerUnion::Group(group) => {
+                    if !group.visible {
+                        continue;
+                    }
+
+                    // Recursively process group's layers, passing this group's name
+                    Self::process_layers_recursive(
+                        &group.layers,
+                        layers,
+                        spawns,
+                        triggers,
+                        Some(&group.name),
+                        back_group,
+                        front_group,
+                    );
+                }
+            }
+        }
     }
 
     /// Load an external .tsx tileset file with collision data
