@@ -213,11 +213,11 @@ pub struct TimeDisplay {
 }
 
 impl TimeDisplay {
-    /// Create a new time display
+    /// Create a new time display (position is top-right corner offset)
     pub fn new(position: Vec2) -> Self {
         Self {
             position,
-            size: Vec2::new(80.0, 40.0),
+            size: Vec2::new(100.0, 50.0),
             hour: 6,
             minute: 0,
             day: 1,
@@ -242,9 +242,15 @@ impl TimeDisplay {
     }
 
     /// Generate sprite for background
+    /// Position is anchored at top-right (position.x = right edge, position.y = top edge)
     pub fn background_sprite(&self) -> Sprite {
+        // Center position: right edge - half width, top edge + half height
+        let center = Vec2::new(
+            self.position.x - self.size.x * 0.5,
+            self.position.y + self.size.y * 0.5,
+        );
         Sprite {
-            position: self.position - self.size * 0.5 + Vec2::new(self.size.x, self.size.y),
+            position: center,
             size: self.size,
             origin: Vec2::new(0.5, 0.5),
             rotation: 0.0,
@@ -274,16 +280,16 @@ impl Hud {
     pub fn new(screen_width: f32, screen_height: f32) -> Self {
         let screen_size = Vec2::new(screen_width, screen_height);
 
-        // Health bar - top left
-        let health = ProgressBar::health(Vec2::new(10.0, 10.0), Vec2::new(200.0, 20.0));
+        // Health bar - top left (bigger for visibility)
+        let health = ProgressBar::health(Vec2::new(10.0, 10.0), Vec2::new(250.0, 28.0));
 
         // Stamina bar - below health
-        let stamina = ProgressBar::stamina(Vec2::new(10.0, 35.0), Vec2::new(200.0, 16.0));
+        let stamina = ProgressBar::stamina(Vec2::new(10.0, 44.0), Vec2::new(250.0, 22.0));
 
         // Hotbar - bottom center
-        let hotbar = Hotbar::new(Vec2::new(screen_width * 0.5, screen_height - 40.0), 9);
+        let hotbar = Hotbar::new(Vec2::new(screen_width * 0.5, screen_height - 50.0), 9);
 
-        // Time display - top right
+        // Time display - top right (position is right edge x, top edge y)
         let time = TimeDisplay::new(Vec2::new(screen_width - 10.0, 10.0));
 
         Self {
@@ -300,9 +306,9 @@ impl Hud {
         self.screen_size = Vec2::new(screen_width, screen_height);
 
         // Update hotbar position
-        self.hotbar.position = Vec2::new(screen_width * 0.5, screen_height - 40.0);
+        self.hotbar.position = Vec2::new(screen_width * 0.5, screen_height - 50.0);
 
-        // Update time display position
+        // Update time display position (right edge, top edge)
         self.time.position = Vec2::new(screen_width - 10.0, 10.0);
     }
 
