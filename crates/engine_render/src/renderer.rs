@@ -178,6 +178,12 @@ impl Renderer {
         self.sprite_batch.set_view_matrix(&self.queue, camera.view_matrix());
     }
 
+    /// Reset to screen-space coordinates for UI rendering
+    /// Origin at top-left, Y increases downward
+    pub fn set_screen_space(&mut self) {
+        self.sprite_batch.resize(&self.queue, self.size.0, self.size.1);
+    }
+
     /// Begin a new frame for rendering
     ///
     /// Returns Ok(Frame) on success, Err if the surface is lost

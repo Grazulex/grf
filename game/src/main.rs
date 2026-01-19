@@ -17,6 +17,7 @@ use engine_core::GameTime;
 use engine_ecs::{Entity, World};
 use engine_input::{Input, KeyCode};
 use engine_render::{glam, glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
+use engine_ui::Hud;
 use engine_window::{winit::event::{KeyEvent, WindowEvent}, App, Window, WindowConfig};
 use log::{error, info};
 use winit::window::Window as WinitWindow;
@@ -43,6 +44,8 @@ struct Game {
     player_bind_group: Option<wgpu::BindGroup>,
     // Window reference for egui
     window: Option<Arc<WinitWindow>>,
+    // HUD (in-game UI)
+    hud: Option<Hud>,
     // Debug tools (feature-gated)
     #[cfg(feature = "debug-tools")]
     egui_renderer: Option<EguiRenderer>,
@@ -67,6 +70,7 @@ impl Game {
             player_texture: None,
             player_bind_group: None,
             window: None,
+            hud: None,
             #[cfg(feature = "debug-tools")]
             egui_renderer: None,
             #[cfg(feature = "debug-tools")]
@@ -221,6 +225,10 @@ impl App for Game {
         let renderer = pollster::block_on(Renderer::new(Arc::clone(&window)));
         let size = renderer.size();
 
+        // Initialize HUD
+        let hud = Hud::new(size.0 as f32, size.1 as f32);
+        self.hud = Some(hud);
+
         // Initialize debug tools
         #[cfg(feature = "debug-tools")]
         {
@@ -345,6 +353,27 @@ impl App for Game {
 
             // Process console commands
             self.process_console_commands();
+        }
+
+        // Hotbar selection (number keys 1-9)
+        if let Some(hud) = &mut self.hud {
+            if let Some(input) = self.world.get_resource::<Input>() {
+                for (key, slot) in [
+                    (KeyCode::Key1, 0),
+                    (KeyCode::Key2, 1),
+                    (KeyCode::Key3, 2),
+                    (KeyCode::Key4, 3),
+                    (KeyCode::Key5, 4),
+                    (KeyCode::Key6, 5),
+                    (KeyCode::Key7, 6),
+                    (KeyCode::Key8, 7),
+                    (KeyCode::Key9, 8),
+                ] {
+                    if input.is_key_just_pressed(key) {
+                        hud.hotbar.select(slot);
+                    }
+                }
+            }
         }
 
         // Fixed timestep updates
@@ -617,9 +646,17 @@ impl App for Game {
                         }
                     }
 
-                    // Flush sprites before overlay rendering
-                    #[cfg(feature = "debug-tools")]
+                    // Flush world sprites before UI rendering
                     renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
+
+                    // Render HUD in screen-space
+                    if let Some(hud) = &self.hud {
+                        renderer.set_screen_space();
+                        for sprite in hud.sprites() {
+                            renderer.draw_sprite(&sprite);
+                        }
+                        // Note: HUD sprites will be drawn in end_frame with white texture
+                    }
 
                     // Update render stats for profiler
                     #[cfg(feature = "debug-tools")]
@@ -692,6 +729,10 @@ impl App for Game {
         }
         if let Some(camera) = self.world.get_resource_mut::<Camera2D>() {
             camera.set_viewport(width as f32, height as f32);
+        }
+        // Update HUD layout
+        if let Some(hud) = &mut self.hud {
+            hud.resize(width as f32, height as f32);
         }
         #[cfg(feature = "debug-tools")]
         if let Some(egui_renderer) = &mut self.egui_renderer {
