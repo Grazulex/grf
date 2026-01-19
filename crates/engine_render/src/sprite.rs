@@ -53,6 +53,7 @@ impl Default for SpriteRegion {
 
 impl SpriteRegion {
     /// Create a region from pixel coordinates within a texture
+    /// Adds a small inset to avoid texture bleeding at tile edges
     pub fn from_pixels(x: u32, y: u32, width: u32, height: u32, tex_width: u32, tex_height: u32) -> Self {
         Self {
             u_min: x as f32 / tex_width as f32,
@@ -186,7 +187,9 @@ const MAX_INDICES: usize = MAX_SPRITES * 6;
 /// Batched sprite renderer
 pub struct SpriteBatch {
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
+    // Dual vertex buffers to avoid overwrite issues between passes
+    world_vertex_buffer: wgpu::Buffer,
+    ui_vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     // World camera (follows player)
     camera_buffer: wgpu::Buffer,
@@ -311,9 +314,15 @@ impl SpriteBatch {
             multiview: None,
         });
 
-        // Create vertex buffer (empty, will be filled each frame)
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Sprite Vertex Buffer"),
+        // Create dual vertex buffers (one for world, one for UI) to avoid overwrite issues
+        let world_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("World Vertex Buffer"),
+            size: (MAX_VERTICES * std::mem::size_of::<SpriteVertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ui_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("UI Vertex Buffer"),
             size: (MAX_VERTICES * std::mem::size_of::<SpriteVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -340,7 +349,8 @@ impl SpriteBatch {
 
         Self {
             pipeline,
-            vertex_buffer,
+            world_vertex_buffer,
+            ui_vertex_buffer,
             index_buffer,
             camera_buffer,
             camera_bind_group,
@@ -383,7 +393,13 @@ impl SpriteBatch {
     }
 
     /// Switch to UI camera (screen-space rendering)
-    pub fn use_ui_camera(&mut self) {
+    /// Also refreshes the UI camera buffer with current screen size
+    pub fn use_ui_camera(&mut self, queue: &wgpu::Queue) {
+        // Ensure UI camera buffer has the correct orthographic projection
+        let camera_uniform = CameraUniform {
+            view_proj: Self::ortho_matrix(self.screen_size.0, self.screen_size.1).to_cols_array_2d(),
+        };
+        queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
         self.use_ui_camera = true;
     }
 
@@ -432,8 +448,16 @@ impl SpriteBatch {
             return;
         }
 
-        // Upload vertex data
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+        // Use the appropriate vertex buffer based on camera mode
+        // This prevents the UI buffer write from overwriting world data
+        let vertex_buffer = if self.use_ui_camera {
+            &self.ui_vertex_buffer
+        } else {
+            &self.world_vertex_buffer
+        };
+
+        // Upload vertex data to the appropriate buffer
+        queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
 
         // Set pipeline and bind groups
         render_pass.set_pipeline(&self.pipeline);
@@ -444,7 +468,7 @@ impl SpriteBatch {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         }
         render_pass.set_bind_group(1, texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
         // Draw all sprites

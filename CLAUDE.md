@@ -4,6 +4,12 @@ Moteur de jeu 2D from scratch en Rust, oriente RPG/Farming top-down (style Stard
 
 ---
 
+## Configuration Claude Code
+
+**Ne PAS utiliser container-use pour ce projet.** Travailler directement sur le filesystem local.
+
+---
+
 ## Architecture du Projet
 
 ### Workspace Cargo (Modulaire)

@@ -284,7 +284,7 @@ impl Renderer {
     /// Set screen-space coordinates for UI rendering
     /// Origin at top-left, Y increases downward
     pub fn set_screen_space(&mut self) {
-        self.sprite_batch.use_ui_camera();
+        self.sprite_batch.use_ui_camera(&self.queue);
     }
 
     /// Restore world camera for rendering

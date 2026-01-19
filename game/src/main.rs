@@ -272,10 +272,16 @@ impl App for Game {
         };
 
         // Load player texture
-        if let Ok(texture) = renderer.load_texture("assets/textures/test_sprite.png") {
-            let bind_group = renderer.create_texture_bind_group(&texture);
-            self.player_texture = Some(texture);
-            self.player_bind_group = Some(bind_group);
+        match renderer.load_texture("assets/textures/test_sprite.png") {
+            Ok(texture) => {
+                log::info!("Player texture loaded: {}x{}", texture.size.0, texture.size.1);
+                let bind_group = renderer.create_texture_bind_group(&texture);
+                self.player_texture = Some(texture);
+                self.player_bind_group = Some(bind_group);
+            }
+            Err(e) => {
+                log::error!("Failed to load player texture: {:?}", e);
+            }
         }
 
         // Create player entity with components
@@ -311,6 +317,31 @@ impl App for Game {
                 .unwrap_or(false);
             if should_quit {
                 std::process::exit(0);
+            }
+        }
+
+        // Handle hotbar slot selection (keys 1-9)
+        if let Some(hud) = &mut self.hud {
+            if let Some(input) = self.world.get_resource::<Input>() {
+                if input.is_key_just_pressed(KeyCode::Key1) {
+                    hud.hotbar.select(0);
+                } else if input.is_key_just_pressed(KeyCode::Key2) {
+                    hud.hotbar.select(1);
+                } else if input.is_key_just_pressed(KeyCode::Key3) {
+                    hud.hotbar.select(2);
+                } else if input.is_key_just_pressed(KeyCode::Key4) {
+                    hud.hotbar.select(3);
+                } else if input.is_key_just_pressed(KeyCode::Key5) {
+                    hud.hotbar.select(4);
+                } else if input.is_key_just_pressed(KeyCode::Key6) {
+                    hud.hotbar.select(5);
+                } else if input.is_key_just_pressed(KeyCode::Key7) {
+                    hud.hotbar.select(6);
+                } else if input.is_key_just_pressed(KeyCode::Key8) {
+                    hud.hotbar.select(7);
+                } else if input.is_key_just_pressed(KeyCode::Key9) {
+                    hud.hotbar.select(8);
+                }
             }
         }
 
@@ -605,12 +636,15 @@ impl App for Game {
                             }
                         }
 
-                        // 2. Render entities with SpriteRender and Position
+                        // 2. Render player entity (same batch as tiles for now)
                         let alpha = self.game_time.alpha() as f32;
-                        for (entity, sprite_render) in self.world.query::<SpriteRender>() {
+                        for (entity, _sprite_render) in self.world.query::<SpriteRender>() {
                             if let Some(pos) = self.world.get::<Position>(entity) {
                                 let render_pos = pos.interpolated(alpha);
-                                let sprite = Sprite::new(render_pos, sprite_render.size());
+                                // Use 16x16 tile size to match tileset
+                                let mut sprite = Sprite::new(render_pos, Vec2::new(16.0, 16.0));
+                                // Use tile at (32, 0) = yellow tile as player placeholder
+                                sprite.region = engine_render::SpriteRegion::from_pixels(32, 0, 16, 16, 64, 64);
                                 renderer.draw_sprite(&sprite);
                             }
                         }
@@ -624,18 +658,16 @@ impl App for Game {
                         }
                     }
 
-                    // Flush world sprites (clears screen and renders world)
+                    // Flush all world sprites (tiles + player)
                     renderer.flush_sprites(&mut frame, self.tileset_bind_group.as_ref());
 
                     // Render HUD in screen-space (on top of world, no clear)
                     if let Some(hud) = &self.hud {
-                        // Switch to UI camera (uses separate buffer, won't affect world)
                         renderer.set_screen_space();
                         for sprite in hud.sprites() {
                             renderer.draw_sprite(&sprite);
                         }
                         renderer.flush_sprites_no_clear(&mut frame, None);
-                        // Switch back to world camera for next frame
                         renderer.set_world_space();
                     }
 
