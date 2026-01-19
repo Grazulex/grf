@@ -9,3 +9,4 @@ description = "Core game loop, time management and lifecycle"
 [dependencies]
 instant = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }

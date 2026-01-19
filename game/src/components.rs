@@ -3,9 +3,10 @@
 //! Components are pure data structs that can be attached to entities.
 
 use engine_render::glam::Vec2;
+use serde::{Deserialize, Serialize};
 
 /// Position component with previous position for interpolation
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Position {
     pub current: Vec2,
     pub previous: Vec2,
@@ -45,7 +46,7 @@ impl Position {
 }
 
 /// Velocity component for movement
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Velocity {
     pub x: f32,
     pub y: f32,
@@ -67,7 +68,7 @@ impl Velocity {
 }
 
 /// Marker component for player-controlled entities
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct PlayerControlled {
     /// Movement speed in pixels per second
     pub speed: f32,
@@ -87,11 +88,11 @@ impl PlayerControlled {
 }
 
 /// Marker component for entities the camera should follow
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct CameraTarget;
 
 /// Sprite rendering component
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SpriteRender {
     pub width: f32,
     pub height: f32,
@@ -112,7 +113,7 @@ impl SpriteRender {
 }
 
 /// Collider component for collision detection
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Collider {
     /// Half-size of the collision box
     pub half_width: f32,

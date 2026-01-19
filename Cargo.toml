@@ -29,7 +29,7 @@ winit = "0.29"
 wgpu = "0.19"
 
 # Math
-glam = "0.25"
+glam = { version = "0.25", features = ["serde"] }
 
 # GPU data casting
 bytemuck = { version = "1.14", features = ["derive"] }

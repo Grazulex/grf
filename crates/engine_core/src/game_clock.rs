@@ -3,6 +3,8 @@
 //! Provides a game clock with hours, days, seasons, and years.
 //! Time flows at a configurable rate relative to real time.
 
+use serde::{Deserialize, Serialize};
+
 /// Minutes per hour
 pub const MINUTES_PER_HOUR: u32 = 60;
 /// Hours per day
@@ -16,7 +18,7 @@ pub const SEASONS_PER_YEAR: u32 = 4;
 pub const DEFAULT_SECONDS_PER_MINUTE: f32 = 1.0;
 
 /// Season of the year
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Season {
     Spring,
     Summer,
@@ -71,7 +73,7 @@ impl Season {
 }
 
 /// Day of the week
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DayOfWeek {
     Monday,
     Tuesday,
@@ -141,7 +143,7 @@ impl DayOfWeek {
 }
 
 /// Time of day period
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeOfDay {
     /// 6:00 - 11:59
     Morning,
@@ -167,7 +169,7 @@ impl TimeOfDay {
 }
 
 /// In-game clock for farming/RPG games
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameClock {
     /// Current minute (0-59)
     minute: u32,

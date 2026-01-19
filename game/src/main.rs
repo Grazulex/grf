@@ -8,6 +8,7 @@ mod farming;
 mod inventory;
 mod items;
 mod npc;
+mod save;
 mod systems;
 
 use std::sync::Arc;
@@ -26,6 +27,8 @@ use winit::window::Window as WinitWindow;
 use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
+use inventory::Inventory;
+use save::{GameClockData, PlayerData, SaveData, SaveManager};
 use systems::{camera_system, input_system, movement_system};
 
 /// The main game application
@@ -46,6 +49,9 @@ struct Game {
     window: Option<Arc<WinitWindow>>,
     // HUD
     hud: Option<Hud>,
+    // Save system
+    save_manager: SaveManager,
+    current_map: String,
     // Debug tools (feature-gated)
     #[cfg(feature = "debug-tools")]
     egui_renderer: Option<EguiRenderer>,
@@ -71,6 +77,8 @@ impl Game {
             player_bind_group: None,
             window: None,
             hud: None,
+            save_manager: SaveManager::new(),
+            current_map: String::new(),
             #[cfg(feature = "debug-tools")]
             egui_renderer: None,
             #[cfg(feature = "debug-tools")]
@@ -121,6 +129,9 @@ impl Game {
 
                 // Update tilemap resource
                 self.world.insert_resource(tilemap);
+
+                // Store current map path for save system
+                self.current_map = map_path.to_string();
             }
             Err(e) => {
                 error!("Failed to load tilemap '{}': {}", map_path, e);
@@ -133,6 +144,115 @@ impl Game {
         self.player_entity
             .and_then(|e| self.world.get::<Position>(e))
             .map(|p| p.current)
+    }
+
+    /// Save game to slot 0
+    fn save_game(&self) {
+        let Some(entity) = self.player_entity else {
+            error!("Cannot save: no player entity");
+            return;
+        };
+
+        // Gather player components
+        let Some(position) = self.world.get::<Position>(entity) else {
+            error!("Cannot save: player has no Position");
+            return;
+        };
+        let Some(player_ctrl) = self.world.get::<PlayerControlled>(entity) else {
+            error!("Cannot save: player has no PlayerControlled");
+            return;
+        };
+        let Some(sprite) = self.world.get::<SpriteRender>(entity) else {
+            error!("Cannot save: player has no SpriteRender");
+            return;
+        };
+        let Some(collider) = self.world.get::<Collider>(entity) else {
+            error!("Cannot save: player has no Collider");
+            return;
+        };
+
+        let player_data = PlayerData::from_components(position, player_ctrl, sprite, collider);
+
+        // Get game clock (use default if not available)
+        let game_clock_data = self
+            .world
+            .get_resource::<engine_core::GameClock>()
+            .map(|c| GameClockData::from_game_clock(c))
+            .unwrap_or_else(|| GameClockData {
+                minute: 0,
+                hour: 6,
+                day: 1,
+                season: "Spring".to_string(),
+                year: 1,
+            });
+
+        // Get inventory (use default if not available)
+        let inventory = self
+            .world
+            .get_resource::<Inventory>()
+            .cloned()
+            .unwrap_or_default();
+
+        let save_data = SaveData::new(
+            player_data,
+            game_clock_data,
+            self.current_map.clone(),
+            inventory,
+        );
+
+        match self.save_manager.save(0, &save_data) {
+            Ok(()) => info!("Game saved successfully!"),
+            Err(e) => error!("Failed to save game: {}", e),
+        }
+    }
+
+    /// Load game from slot 0
+    fn load_game(&mut self) {
+        let save_data = match self.save_manager.load(0) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("Failed to load game: {}", e);
+                return;
+            }
+        };
+
+        // Restore player state
+        if let Some(entity) = self.player_entity {
+            if let Some(pos) = self.world.get_mut::<Position>(entity) {
+                *pos = save_data.player.to_position();
+            }
+            if let Some(player_ctrl) = self.world.get_mut::<PlayerControlled>(entity) {
+                *player_ctrl = save_data.player.to_player_controlled();
+            }
+            if let Some(sprite) = self.world.get_mut::<SpriteRender>(entity) {
+                *sprite = save_data.player.to_sprite_render();
+            }
+            if let Some(collider) = self.world.get_mut::<Collider>(entity) {
+                *collider = save_data.player.to_collider();
+            }
+
+            // Snap camera to loaded position
+            if let Some(camera) = self.world.get_resource_mut::<Camera2D>() {
+                camera.set_position(save_data.player.position);
+            }
+        }
+
+        // Restore inventory
+        self.world.insert_resource(save_data.inventory);
+
+        // Load map if different
+        if !save_data.current_map.is_empty() && save_data.current_map != self.current_map {
+            self.load_map(&save_data.current_map, "default");
+            // Override position from save (load_map would use spawn point)
+            if let Some(entity) = self.player_entity {
+                if let Some(pos) = self.world.get_mut::<Position>(entity) {
+                    pos.current = save_data.player.position;
+                    pos.previous = save_data.player.position;
+                }
+            }
+        }
+
+        info!("Game loaded successfully!");
     }
 
     /// Process pending console commands
@@ -261,6 +381,9 @@ impl App for Game {
                 // Store tilemap as resource
                 self.world.insert_resource(tilemap);
 
+                // Store current map for save system
+                self.current_map = "assets/maps/test.json".to_string();
+
                 start
             }
             Err(e) => {
@@ -342,6 +465,27 @@ impl App for Game {
                 } else if input.is_key_just_pressed(KeyCode::Key9) {
                     hud.hotbar.select(8);
                 }
+            }
+        }
+
+        // Handle save/load (F5 to save, F9 to load)
+        {
+            let save_pressed = self
+                .world
+                .get_resource::<Input>()
+                .map(|i| i.is_key_just_pressed(KeyCode::F5))
+                .unwrap_or(false);
+            let load_pressed = self
+                .world
+                .get_resource::<Input>()
+                .map(|i| i.is_key_just_pressed(KeyCode::F9))
+                .unwrap_or(false);
+
+            if save_pressed {
+                self.save_game();
+            }
+            if load_pressed {
+                self.load_game();
             }
         }
 
