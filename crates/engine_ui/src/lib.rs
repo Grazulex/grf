@@ -9,9 +9,11 @@
 
 mod hud;
 mod menu;
+mod settings_menu;
 
 pub use hud::{colors, Hotbar, HotbarSlot, Hud, ProgressBar, TimeDisplay};
 pub use menu::{Menu, MenuItem, MenuStyle, presets as menu_presets};
+pub use settings_menu::{SettingsMenu, presets as settings_presets};
 
 /// UI layer z-order (rendered on top)
 pub const UI_Z_ORDER: i32 = 100;

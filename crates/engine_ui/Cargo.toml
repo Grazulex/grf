@@ -10,3 +10,4 @@ description = "In-game UI system"
 glam = { workspace = true }
 log = { workspace = true }
 engine_render = { workspace = true }
+engine_core = { workspace = true }

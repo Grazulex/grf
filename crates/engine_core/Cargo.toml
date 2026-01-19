@@ -10,3 +10,4 @@ description = "Core game loop, time management and lifecycle"
 instant = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }

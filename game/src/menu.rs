@@ -11,6 +11,15 @@ pub enum GameState {
     Playing,
     /// Game is paused (pause menu shown)
     Paused,
+    /// Settings menu (accessible from main menu or pause menu)
+    Settings,
+}
+
+/// Track where we came from to return to the right state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviousState {
+    MainMenu,
+    Paused,
 }
 
 impl Default for GameState {

@@ -15,11 +15,11 @@ mod systems;
 use std::sync::Arc;
 
 use anyhow::Result;
-use engine_core::GameTime;
+use engine_core::{GameSettings, GameTime};
 use engine_ecs::{Entity, World};
 use engine_input::{Input, KeyCode};
 use engine_render::{glam, glam::Vec2, wgpu, Camera2D, Renderer, Sprite, Texture, Tilemap};
-use engine_ui::{Hud, Menu, MenuItem};
+use engine_ui::{Hud, Menu, MenuItem, SettingsMenu};
 use engine_window::{winit::event::{KeyEvent, WindowEvent}, App, Window, WindowConfig};
 use log::{error, info};
 use winit::window::Window as WinitWindow;
@@ -29,7 +29,7 @@ use engine_debug::{ConsoleCommand, DebugOverlay, EguiRenderer};
 
 use components::{CameraTarget, Collider, PlayerControlled, Position, SpriteRender, Velocity};
 use inventory::Inventory;
-use menu::GameState;
+use menu::{GameState, PreviousState};
 use save::{GameClockData, PlayerData, SaveData, SaveManager};
 use systems::{camera_system, input_system, movement_system};
 
@@ -38,10 +38,16 @@ struct Game {
     game_time: GameTime,
     /// Current game state (menu, playing, paused)
     game_state: GameState,
+    /// Previous state to return to from settings
+    previous_state: PreviousState,
     /// Main menu (from engine_ui)
     main_menu: Menu,
     /// Pause menu (from engine_ui)
     pause_menu: Menu,
+    /// Settings menu (from engine_ui)
+    settings_menu: SettingsMenu,
+    /// Game settings (from engine_core)
+    settings: GameSettings,
     /// ECS World containing all entities and components
     world: World,
     /// Reference to the player entity
@@ -93,17 +99,31 @@ impl Game {
         menu
     }
 
+    /// Create the settings menu from current settings
+    fn create_settings_menu(settings: &GameSettings) -> SettingsMenu {
+        let mut menu = SettingsMenu::new(Vec2::new(400.0, 300.0)); // Will be repositioned on render
+        menu.set_entries(settings.to_entries());
+        menu
+    }
+
     fn new() -> Self {
         let mut world = World::new();
 
         // Insert Input as a resource
         world.insert_resource(Input::new());
 
+        // Load settings (or use defaults)
+        let settings = GameSettings::load();
+        let settings_menu = Self::create_settings_menu(&settings);
+
         Self {
             game_time: GameTime::new(),
             game_state: GameState::MainMenu,
+            previous_state: PreviousState::MainMenu,
             main_menu: Self::create_main_menu(),
             pause_menu: Self::create_pause_menu(),
+            settings_menu,
+            settings,
             world,
             player_entity: None,
             renderer: None,
@@ -322,8 +342,10 @@ impl Game {
                         self.game_state = GameState::Playing;
                     }
                     "settings" => {
-                        // TODO: Task #038 will implement settings menu
-                        info!("Settings not yet implemented");
+                        info!("Opening settings from main menu...");
+                        self.previous_state = PreviousState::MainMenu;
+                        self.settings_menu.reset();
+                        self.game_state = GameState::Settings;
                     }
                     "quit" => {
                         info!("Goodbye!");
@@ -392,8 +414,10 @@ impl Game {
                         self.save_game();
                     }
                     "settings" => {
-                        // TODO: Task #038 will implement settings menu
-                        info!("Settings not yet implemented");
+                        info!("Opening settings from pause menu...");
+                        self.previous_state = PreviousState::Paused;
+                        self.settings_menu.reset();
+                        self.game_state = GameState::Settings;
                     }
                     "main_menu" => {
                         info!("Returning to main menu...");
@@ -405,6 +429,65 @@ impl Game {
                         std::process::exit(0);
                     }
                     _ => {}
+                }
+            }
+        }
+    }
+
+    /// Update settings menu state
+    fn update_settings(&mut self) {
+        // Handle settings menu input
+        let (escape_pressed, left_pressed, right_pressed) = {
+            if let Some(input) = self.world.get_resource::<Input>() {
+                if input.is_key_just_pressed(KeyCode::Up) || input.is_key_just_pressed(KeyCode::W) {
+                    self.settings_menu.move_up();
+                }
+                if input.is_key_just_pressed(KeyCode::Down) || input.is_key_just_pressed(KeyCode::S) {
+                    self.settings_menu.move_down();
+                }
+                // Enter/Space toggles (for toggles) or does nothing (for sliders)
+                if input.is_key_just_pressed(KeyCode::Enter) || input.is_key_just_pressed(KeyCode::Space) {
+                    self.settings_menu.toggle_or_adjust();
+                }
+                (
+                    input.is_key_just_pressed(KeyCode::Escape),
+                    input.is_key_just_pressed(KeyCode::Left) || input.is_key_just_pressed(KeyCode::A),
+                    input.is_key_just_pressed(KeyCode::Right) || input.is_key_just_pressed(KeyCode::D),
+                )
+            } else {
+                (false, false, false)
+            }
+        };
+
+        // Left/Right adjust values
+        if left_pressed {
+            self.settings_menu.adjust_left();
+        }
+        if right_pressed {
+            self.settings_menu.adjust_right();
+        }
+
+        // Escape returns to previous state and saves settings
+        if escape_pressed {
+            // Apply settings from menu entries
+            for entry in self.settings_menu.entries() {
+                self.settings.update_from_entry(entry);
+            }
+
+            // Save settings to file
+            if let Err(e) = self.settings.save() {
+                error!("Failed to save settings: {}", e);
+            } else {
+                info!("Settings saved");
+            }
+
+            // Return to previous state
+            match self.previous_state {
+                PreviousState::MainMenu => {
+                    self.game_state = GameState::MainMenu;
+                }
+                PreviousState::Paused => {
+                    self.game_state = GameState::Paused;
                 }
             }
         }
@@ -594,6 +677,10 @@ impl App for Game {
             }
             GameState::Paused => {
                 self.update_pause_menu();
+                return;
+            }
+            GameState::Settings => {
+                self.update_settings();
                 return;
             }
             GameState::Playing => {
@@ -940,6 +1027,17 @@ impl App for Game {
                             // Render main menu using engine_ui sprites
                             let size = renderer.size();
                             let menu_sprites = self.main_menu.sprites((size.0 as f32, size.1 as f32));
+                            renderer.set_screen_space();
+                            for sprite in menu_sprites {
+                                renderer.draw_sprite(&sprite);
+                            }
+                            renderer.flush_sprites(&mut frame, None);
+                            renderer.set_world_space();
+                        }
+                        GameState::Settings => {
+                            // Render settings menu
+                            let size = renderer.size();
+                            let menu_sprites = self.settings_menu.sprites((size.0 as f32, size.1 as f32));
                             renderer.set_screen_space();
                             for sprite in menu_sprites {
                                 renderer.draw_sprite(&sprite);

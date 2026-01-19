@@ -22,3 +22,6 @@ cache.sqlite
 
 # Save files (local testing)
 saves/
+
+# Settings file (user preferences)
+settings.json

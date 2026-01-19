@@ -831,6 +831,7 @@ dependencies = [
  "instant",
  "log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -893,6 +894,7 @@ dependencies = [
 name = "engine_ui"
 version = "0.1.0"
 dependencies = [
+ "engine_core",
  "engine_render",
  "glam",
  "log",
