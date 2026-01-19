@@ -1093,49 +1093,55 @@ impl DebugOverlay {
     /// Render layer legend window
     fn render_layer_legend(&mut self, ctx: &Context) {
         Window::new("📐 Z-Order / Layers")
-            .default_size([280.0, 200.0])
+            .default_size([300.0, 250.0])
             .show(ctx, |ui| {
-                ui.heading("Render Order (bottom to top)");
-                ui.separator();
-
-                // Standard layer descriptions
-                let standard_layers = [
-                    (0, "Ground", Color32::from_rgb(139, 90, 43)),
-                    (1, "Ground Decor", Color32::from_rgb(34, 139, 34)),
-                    (2, "Shadows", Color32::from_rgb(64, 64, 64)),
-                    (3, "Entities (Y-sorted)", Color32::from_rgb(255, 215, 0)),
-                    (4, "Above Entities", Color32::from_rgb(135, 206, 250)),
-                    (5, "Weather/Effects", Color32::from_rgb(255, 255, 255)),
-                ];
-
-                for (z, name, color) in standard_layers {
-                    ui.horizontal(|ui| {
-                        // Color indicator
-                        let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(12.0, 12.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, color);
-
-                        // Layer info
-                        ui.label(RichText::new(format!("Z{}: {}", z, name)).color(color));
-                    });
-                }
-
-                ui.separator();
-                ui.checkbox(&mut self.config.show_z_order, "Show Z-Order Labels (Ctrl+Z)");
-
-                // Show dynamic layer info if available
+                // Show actual tilemap layers if available
                 if !self.zorder_data.layers.is_empty() {
+                    ui.heading("Tilemap Layers (render order)");
                     ui.separator();
-                    ui.heading("Current Frame Layers");
 
                     for layer in &self.zorder_data.layers {
                         ui.horizontal(|ui| {
                             let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(12.0, 12.0), egui::Sense::hover());
                             ui.painter().rect_filled(rect, 2.0, layer.color);
 
-                            ui.label(format!("{}: {} items", layer.name, layer.count));
+                            // Show layer name with count if > 1
+                            let label = if layer.count > 1 {
+                                format!("{} ({})", layer.name, layer.count)
+                            } else {
+                                layer.name.clone()
+                            };
+                            ui.label(RichText::new(label).color(layer.color));
                         });
                     }
+
+                    ui.separator();
                 }
+
+                ui.checkbox(&mut self.config.show_z_order, "Show Z-Order Labels (Ctrl+Z)");
+
+                // Show conceptual layer reference (collapsible)
+                ui.collapsing("Layer Reference (conceptual)", |ui| {
+                    let standard_layers = [
+                        ("↓ Ground layers", Color32::from_rgb(139, 90, 43)),
+                        ("↓ Decor layers", Color32::from_rgb(34, 139, 34)),
+                        ("▶ PLAYER (Y-sorted)", Color32::from_rgb(255, 215, 0)),
+                        ("↑ Above player", Color32::from_rgb(135, 206, 250)),
+                        ("↑ Weather/UI", Color32::from_rgb(255, 255, 255)),
+                    ];
+
+                    for (name, color) in standard_layers {
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(12.0, 12.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 2.0, color);
+                            ui.label(RichText::new(name).color(color).small());
+                        });
+                    }
+
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("↓ = behind player").small().color(Color32::GRAY));
+                    ui.label(RichText::new("↑ = in front of player").small().color(Color32::GRAY));
+                });
             });
     }
 

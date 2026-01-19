@@ -968,15 +968,50 @@ impl App for Game {
                     self.debug_overlay.add_zorder_label(pos.current, z_order, label, color);
                 }
 
-                // Add layer info for legend
+                // Add layer info for legend - show actual tilemap layer names
                 if let Some(tilemap) = self.world.get_resource::<Tilemap>() {
-                    let below = tilemap.below_layers().len();
-                    let above = tilemap.above_layers().len();
+                    let below_indices = tilemap.below_layers();
+                    let above_indices = tilemap.above_layers();
                     let entity_count = self.world.query::<Position>().count();
 
-                    self.debug_overlay.add_layer_info(0, "Below Layers", engine_debug::DebugColor::from_rgb(139, 90, 43), below);
-                    self.debug_overlay.add_layer_info(1, "Entities", engine_debug::DebugColor::YELLOW, entity_count);
-                    self.debug_overlay.add_layer_info(2, "Above Layers", engine_debug::DebugColor::from_rgb(135, 206, 250), above);
+                    let mut layer_index = 0;
+
+                    // Show layers below player (with actual names)
+                    for idx in &below_indices {
+                        if let Some(layer) = tilemap.layers.get(*idx) {
+                            let label = format!("↓ {} (z:{})", layer.name, layer.z_order);
+                            self.debug_overlay.add_layer_info(
+                                layer_index,
+                                label,
+                                engine_debug::DebugColor::from_rgb(139, 90, 43),
+                                1,
+                            );
+                            layer_index += 1;
+                        }
+                    }
+
+                    // Show player/entities layer
+                    self.debug_overlay.add_layer_info(
+                        layer_index,
+                        "▶ PLAYER (Y-sorted)",
+                        engine_debug::DebugColor::GREEN,
+                        entity_count,
+                    );
+                    layer_index += 1;
+
+                    // Show layers above player (with actual names)
+                    for idx in &above_indices {
+                        if let Some(layer) = tilemap.layers.get(*idx) {
+                            let label = format!("↑ {} (z:{})", layer.name, layer.z_order);
+                            self.debug_overlay.add_layer_info(
+                                layer_index,
+                                label,
+                                engine_debug::DebugColor::from_rgb(135, 206, 250),
+                                1,
+                            );
+                            layer_index += 1;
+                        }
+                    }
                 }
             }
         }
