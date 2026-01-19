@@ -1141,28 +1141,30 @@ impl App for Game {
                                 let camera = unsafe { &*cam_ptr };
 
                                 // 1. Render layers BELOW entities (ground, decorations)
-                                // Group sprites by tileset for proper batching
-                                let mut sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
+                                // Process layer by layer to maintain correct z-order
+                                let mut first_flush = true;
                                 for layer_idx in tilemap.below_layers() {
                                     let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                                    for (sprite, tileset_idx) in sprites {
-                                        sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
-                                    }
-                                }
 
-                                // Render each tileset batch with its correct texture
-                                let mut first_flush = true;
-                                for tileset_idx in 0..self.tileset_textures.len() {
-                                    if let Some(sprites) = sprites_by_tileset.get(&tileset_idx) {
-                                        for sprite in sprites {
-                                            renderer.draw_sprite(sprite);
-                                        }
-                                        let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
-                                        if first_flush {
-                                            renderer.flush_sprites(&mut frame, bind_group);
-                                            first_flush = false;
-                                        } else {
-                                            renderer.flush_sprites_no_clear(&mut frame, bind_group);
+                                    // Group this layer's sprites by tileset
+                                    let mut layer_sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
+                                    for (sprite, tileset_idx) in sprites {
+                                        layer_sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
+                                    }
+
+                                    // Render each tileset batch for this layer
+                                    for tileset_idx in 0..self.tileset_textures.len() {
+                                        if let Some(layer_sprites) = layer_sprites_by_tileset.get(&tileset_idx) {
+                                            for sprite in layer_sprites {
+                                                renderer.draw_sprite(sprite);
+                                            }
+                                            let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
+                                            if first_flush {
+                                                renderer.flush_sprites(&mut frame, bind_group);
+                                                first_flush = false;
+                                            } else {
+                                                renderer.flush_sprites_no_clear(&mut frame, bind_group);
+                                            }
                                         }
                                     }
                                 }
@@ -1201,23 +1203,25 @@ impl App for Game {
                                 }
 
                                 // 3. Render layers ABOVE entities
-                                // Group sprites by tileset for proper batching
-                                let mut above_sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
+                                // Process layer by layer to maintain correct z-order
                                 for layer_idx in tilemap.above_layers() {
                                     let sprites = tilemap.get_visible_sprites(layer_idx, camera);
-                                    for (sprite, tileset_idx) in sprites {
-                                        above_sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
-                                    }
-                                }
 
-                                // Render each tileset batch with its correct texture
-                                for tileset_idx in 0..self.tileset_textures.len() {
-                                    if let Some(sprites) = above_sprites_by_tileset.get(&tileset_idx) {
-                                        for sprite in sprites {
-                                            renderer.draw_sprite(sprite);
+                                    // Group this layer's sprites by tileset
+                                    let mut layer_sprites_by_tileset: std::collections::HashMap<usize, Vec<Sprite>> = std::collections::HashMap::new();
+                                    for (sprite, tileset_idx) in sprites {
+                                        layer_sprites_by_tileset.entry(tileset_idx).or_default().push(sprite);
+                                    }
+
+                                    // Render each tileset batch for this layer
+                                    for tileset_idx in 0..self.tileset_textures.len() {
+                                        if let Some(layer_sprites) = layer_sprites_by_tileset.get(&tileset_idx) {
+                                            for sprite in layer_sprites {
+                                                renderer.draw_sprite(sprite);
+                                            }
+                                            let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
+                                            renderer.flush_sprites_no_clear(&mut frame, bind_group);
                                         }
-                                        let bind_group = self.tileset_textures.get(tileset_idx).map(|(_, bg)| bg);
-                                        renderer.flush_sprites_no_clear(&mut frame, bind_group);
                                     }
                                 }
                             }
