@@ -178,12 +178,6 @@ impl Renderer {
         self.sprite_batch.set_view_matrix(&self.queue, camera.view_matrix());
     }
 
-    /// Reset to screen-space coordinates for UI rendering
-    /// Origin at top-left, Y increases downward
-    pub fn set_screen_space(&mut self) {
-        self.sprite_batch.resize(&self.queue, self.size.0, self.size.1);
-    }
-
     /// Begin a new frame for rendering
     ///
     /// Returns Ok(Frame) on success, Err if the surface is lost
@@ -219,21 +213,6 @@ impl Renderer {
     /// Flush sprites to the frame (call before overlay rendering)
     /// This clears the screen and renders all batched sprites
     pub fn flush_sprites(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
-        self.flush_sprites_internal(frame, texture_bind_group, true);
-    }
-
-    /// Flush sprites without clearing the screen (for UI layers on top of world)
-    pub fn flush_sprites_no_clear(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
-        self.flush_sprites_internal(frame, texture_bind_group, false);
-    }
-
-    /// Get the white texture bind group for solid color rendering
-    pub fn white_bind_group(&self) -> &wgpu::BindGroup {
-        &self.white_bind_group
-    }
-
-    /// Internal flush implementation
-    fn flush_sprites_internal(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>, clear: bool) {
         // Use white texture if none provided
         let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
 
@@ -245,19 +224,13 @@ impl Renderer {
         }
 
         {
-            let load_op = if clear {
-                wgpu::LoadOp::Clear(CLEAR_COLOR)
-            } else {
-                wgpu::LoadOp::Load
-            };
-
             let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Sprite Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: load_op,
+                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -271,6 +244,52 @@ impl Renderer {
 
         // Reset batch so end_frame knows sprites were already rendered
         self.sprite_batch.begin();
+    }
+
+    /// Flush sprites without clearing the screen (for UI layers on top of world)
+    pub fn flush_sprites_no_clear(&mut self, frame: &mut Frame, texture_bind_group: Option<&wgpu::BindGroup>) {
+        // Use white texture if none provided
+        let bind_group = texture_bind_group.unwrap_or(&self.white_bind_group);
+
+        // Record stats before flushing
+        let sprite_count = self.sprite_batch.sprite_count();
+        if sprite_count > 0 {
+            self.stats.record_draw(sprite_count);
+            self.stats.record_texture_bind();
+        }
+
+        {
+            let mut render_pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("UI Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Don't clear - preserve world underneath
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            self.sprite_batch.end(&self.queue, &mut render_pass, bind_group);
+        }
+
+        // Reset batch
+        self.sprite_batch.begin();
+    }
+
+    /// Set screen-space coordinates for UI rendering
+    /// Origin at top-left, Y increases downward
+    pub fn set_screen_space(&mut self) {
+        self.sprite_batch.use_ui_camera();
+    }
+
+    /// Restore world camera for rendering
+    pub fn set_world_space(&mut self) {
+        self.sprite_batch.use_world_camera();
     }
 
     /// End the frame and present (submits commands and presents)

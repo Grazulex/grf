@@ -188,8 +188,14 @@ pub struct SpriteBatch {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    // World camera (follows player)
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    // UI camera (fixed screen-space)
+    ui_camera_buffer: wgpu::Buffer,
+    ui_camera_bind_group: wgpu::BindGroup,
+    // Currently active camera for rendering
+    use_ui_camera: bool,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     vertices: Vec<SpriteVertex>,
     sprite_count: usize,
@@ -236,6 +242,26 @@ impl SpriteBatch {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        // UI camera buffer (screen-space, never changes except on resize)
+        let ui_camera_uniform = CameraUniform {
+            view_proj: Self::ortho_matrix(screen_size.0, screen_size.1).to_cols_array_2d(),
+        };
+        let ui_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("UI Camera Buffer"),
+            contents: bytemuck::cast_slice(&[ui_camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // UI camera bind group
+        let ui_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("UI Camera Bind Group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ui_camera_buffer.as_entire_binding(),
             }],
         });
 
@@ -318,6 +344,9 @@ impl SpriteBatch {
             index_buffer,
             camera_buffer,
             camera_bind_group,
+            ui_camera_buffer,
+            ui_camera_bind_group,
+            use_ui_camera: false,
             texture_bind_group_layout,
             vertices: Vec::with_capacity(MAX_VERTICES),
             sprite_count: 0,
@@ -334,10 +363,13 @@ impl SpriteBatch {
     /// Update the screen size (call on resize)
     pub fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
         self.screen_size = (width, height);
+        // Update world camera buffer
         let camera_uniform = CameraUniform {
             view_proj: Self::ortho_matrix(width, height).to_cols_array_2d(),
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+        // Also update UI camera buffer
+        queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }
 
     /// Update the view-projection matrix (call each frame with camera)
@@ -346,6 +378,18 @@ impl SpriteBatch {
             view_proj: view_matrix.to_cols_array_2d(),
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+        // Reset to world camera mode
+        self.use_ui_camera = false;
+    }
+
+    /// Switch to UI camera (screen-space rendering)
+    pub fn use_ui_camera(&mut self) {
+        self.use_ui_camera = true;
+    }
+
+    /// Switch to world camera
+    pub fn use_world_camera(&mut self) {
+        self.use_ui_camera = false;
     }
 
     /// Begin a new batch
@@ -393,7 +437,12 @@ impl SpriteBatch {
 
         // Set pipeline and bind groups
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        // Use UI camera or world camera based on mode
+        if self.use_ui_camera {
+            render_pass.set_bind_group(0, &self.ui_camera_bind_group, &[]);
+        } else {
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        }
         render_pass.set_bind_group(1, texture_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

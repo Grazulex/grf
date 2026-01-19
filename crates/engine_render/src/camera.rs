@@ -142,23 +142,24 @@ impl Camera2D {
             && rect_max.y >= cam_min.y && rect_min.y <= cam_max.y
     }
 
-    /// Get the view-projection matrix for GPU rendering
-    /// This transforms world coordinates to clip space, centering the view on the camera
+    /// Get the view matrix for GPU rendering
+    /// This transforms world coordinates to normalized device coordinates (-1 to 1)
     #[must_use]
     pub fn view_matrix(&self) -> Mat4 {
-        // Calculate the visible area based on viewport and zoom
-        let half_width = self.viewport.x * 0.5 / self.zoom;
-        let half_height = self.viewport.y * 0.5 / self.zoom;
+        // Scale by zoom and normalize to NDC
+        let scale_x = 2.0 * self.zoom / self.viewport.x;
+        let scale_y = 2.0 * self.zoom / self.viewport.y;
 
-        // Orthographic projection centered on camera position
-        // Left/Right/Bottom/Top in world coordinates
-        let left = self.position.x - half_width;
-        let right = self.position.x + half_width;
-        let top = self.position.y - half_height;
-        let bottom = self.position.y + half_height;
+        // Translate camera position
+        let translate_x = -self.position.x * scale_x;
+        let translate_y = -self.position.y * scale_y;
 
-        // Standard orthographic projection (Y-down for screen coordinates)
-        Mat4::orthographic_rh(left, right, bottom, top, -1.0, 1.0)
+        Mat4::from_cols_array(&[
+            scale_x, 0.0, 0.0, 0.0,
+            0.0, -scale_y, 0.0, 0.0, // Negative Y for screen coordinates (Y down)
+            0.0, 0.0, 1.0, 0.0,
+            translate_x, -translate_y, 0.0, 1.0,
+        ])
     }
 }
 

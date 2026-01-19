@@ -44,7 +44,7 @@ struct Game {
     player_bind_group: Option<wgpu::BindGroup>,
     // Window reference for egui
     window: Option<Arc<WinitWindow>>,
-    // HUD (in-game UI)
+    // HUD
     hud: Option<Hud>,
     // Debug tools (feature-gated)
     #[cfg(feature = "debug-tools")]
@@ -225,10 +225,6 @@ impl App for Game {
         let renderer = pollster::block_on(Renderer::new(Arc::clone(&window)));
         let size = renderer.size();
 
-        // Initialize HUD
-        let hud = Hud::new(size.0 as f32, size.1 as f32);
-        self.hud = Some(hud);
-
         // Initialize debug tools
         #[cfg(feature = "debug-tools")]
         {
@@ -297,6 +293,9 @@ impl App for Game {
         camera.follow(player_start, 5.0);
         self.world.insert_resource(camera);
 
+        // Initialize HUD
+        self.hud = Some(Hud::new(size.0 as f32, size.1 as f32));
+
         self.renderer = Some(renderer);
     }
 
@@ -353,27 +352,6 @@ impl App for Game {
 
             // Process console commands
             self.process_console_commands();
-        }
-
-        // Hotbar selection (number keys 1-9)
-        if let Some(hud) = &mut self.hud {
-            if let Some(input) = self.world.get_resource::<Input>() {
-                for (key, slot) in [
-                    (KeyCode::Key1, 0),
-                    (KeyCode::Key2, 1),
-                    (KeyCode::Key3, 2),
-                    (KeyCode::Key4, 3),
-                    (KeyCode::Key5, 4),
-                    (KeyCode::Key6, 5),
-                    (KeyCode::Key7, 6),
-                    (KeyCode::Key8, 7),
-                    (KeyCode::Key9, 8),
-                ] {
-                    if input.is_key_just_pressed(key) {
-                        hud.hotbar.select(slot);
-                    }
-                }
-            }
         }
 
         // Fixed timestep updates
@@ -651,12 +629,14 @@ impl App for Game {
 
                     // Render HUD in screen-space (on top of world, no clear)
                     if let Some(hud) = &self.hud {
+                        // Switch to UI camera (uses separate buffer, won't affect world)
                         renderer.set_screen_space();
                         for sprite in hud.sprites() {
                             renderer.draw_sprite(&sprite);
                         }
-                        // Flush HUD with white texture (None = white), no clear to preserve world
                         renderer.flush_sprites_no_clear(&mut frame, None);
+                        // Switch back to world camera for next frame
+                        renderer.set_world_space();
                     }
 
                     // Update render stats for profiler
