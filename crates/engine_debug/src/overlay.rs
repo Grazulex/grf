@@ -107,6 +107,103 @@ pub struct ZOrderDebugData {
     pub screen_size: (f32, f32),
 }
 
+/// Event type for categorization and filtering
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventType {
+    /// Input events (key press, mouse click)
+    Input,
+    /// Game events (map transition, item pickup, dialogue)
+    Game,
+    /// System events (init, resize, error)
+    System,
+    /// Debug events (toggle, command)
+    Debug,
+}
+
+impl EventType {
+    /// Get the display name for this event type
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            EventType::Input => "Input",
+            EventType::Game => "Game",
+            EventType::System => "System",
+            EventType::Debug => "Debug",
+        }
+    }
+
+    /// Get the color for this event type
+    #[must_use]
+    pub fn color(&self) -> Color32 {
+        match self {
+            EventType::Input => Color32::from_rgb(100, 200, 255),  // Light blue
+            EventType::Game => Color32::from_rgb(100, 255, 100),   // Light green
+            EventType::System => Color32::from_rgb(255, 200, 100), // Orange
+            EventType::Debug => Color32::from_rgb(200, 150, 255),  // Purple
+        }
+    }
+}
+
+/// A single event log entry
+#[derive(Debug, Clone)]
+pub struct EventLogEntry {
+    /// Timestamp in seconds since game start
+    pub timestamp: f64,
+    /// Type of event
+    pub event_type: EventType,
+    /// Event message
+    pub message: String,
+}
+
+impl EventLogEntry {
+    /// Create a new event log entry
+    #[must_use]
+    pub fn new(timestamp: f64, event_type: EventType, message: impl Into<String>) -> Self {
+        Self {
+            timestamp,
+            event_type,
+            message: message.into(),
+        }
+    }
+}
+
+/// Event log filter state
+#[derive(Debug, Clone)]
+pub struct EventLogFilter {
+    /// Show input events
+    pub show_input: bool,
+    /// Show game events
+    pub show_game: bool,
+    /// Show system events
+    pub show_system: bool,
+    /// Show debug events
+    pub show_debug: bool,
+}
+
+impl Default for EventLogFilter {
+    fn default() -> Self {
+        Self {
+            show_input: true,
+            show_game: true,
+            show_system: true,
+            show_debug: true,
+        }
+    }
+}
+
+impl EventLogFilter {
+    /// Check if an event type should be shown
+    #[must_use]
+    pub fn should_show(&self, event_type: EventType) -> bool {
+        match event_type {
+            EventType::Input => self.show_input,
+            EventType::Game => self.show_game,
+            EventType::System => self.show_system,
+            EventType::Debug => self.show_debug,
+        }
+    }
+}
+
 /// Component value for display/editing
 #[derive(Debug, Clone)]
 pub enum ComponentValue {
@@ -235,6 +332,9 @@ pub struct DisplayRenderStats {
 }
 
 /// Debug overlay manager
+/// Maximum number of events to keep in the log
+const MAX_EVENT_LOG_ENTRIES: usize = 200;
+
 pub struct DebugOverlay {
     /// Debug configuration
     pub config: DebugConfig,
@@ -264,6 +364,12 @@ pub struct DebugOverlay {
     ecs_data: EcsInspectorData,
     /// Currently selected entity ID
     selected_entity: Option<u32>,
+    /// Event log entries
+    event_log: Vec<EventLogEntry>,
+    /// Event log filter
+    event_filter: EventLogFilter,
+    /// Auto-scroll to bottom
+    event_log_auto_scroll: bool,
 }
 
 impl Default for DebugOverlay {
@@ -294,7 +400,65 @@ impl DebugOverlay {
             zorder_data: ZOrderDebugData::default(),
             ecs_data: EcsInspectorData::default(),
             selected_entity: None,
+            event_log: Vec::with_capacity(MAX_EVENT_LOG_ENTRIES),
+            event_filter: EventLogFilter::default(),
+            event_log_auto_scroll: true,
         }
+    }
+
+    /// Log an event to the event log
+    pub fn log_event(&mut self, timestamp: f64, event_type: EventType, message: impl Into<String>) {
+        let entry = EventLogEntry::new(timestamp, event_type, message);
+        self.event_log.push(entry);
+
+        // Keep only the last MAX_EVENT_LOG_ENTRIES
+        if self.event_log.len() > MAX_EVENT_LOG_ENTRIES {
+            self.event_log.remove(0);
+        }
+    }
+
+    /// Log an input event
+    pub fn log_input(&mut self, timestamp: f64, message: impl Into<String>) {
+        self.log_event(timestamp, EventType::Input, message);
+    }
+
+    /// Log a game event
+    pub fn log_game(&mut self, timestamp: f64, message: impl Into<String>) {
+        self.log_event(timestamp, EventType::Game, message);
+    }
+
+    /// Log a system event
+    pub fn log_system(&mut self, timestamp: f64, message: impl Into<String>) {
+        self.log_event(timestamp, EventType::System, message);
+    }
+
+    /// Log a debug event
+    pub fn log_debug(&mut self, timestamp: f64, message: impl Into<String>) {
+        self.log_event(timestamp, EventType::Debug, message);
+    }
+
+    /// Clear all events from the log
+    pub fn clear_event_log(&mut self) {
+        self.event_log.clear();
+    }
+
+    /// Get the number of events by type
+    pub fn event_counts(&self) -> (usize, usize, usize, usize) {
+        let mut input = 0;
+        let mut game = 0;
+        let mut system = 0;
+        let mut debug = 0;
+
+        for entry in &self.event_log {
+            match entry.event_type {
+                EventType::Input => input += 1,
+                EventType::Game => game += 1,
+                EventType::System => system += 1,
+                EventType::Debug => debug += 1,
+            }
+        }
+
+        (input, game, system, debug)
     }
 
     /// Check if collision visualization should be rendered
@@ -941,17 +1105,98 @@ impl DebugOverlay {
             });
     }
 
-    /// Render event log panel (stub for now)
+    /// Render event log panel
     fn render_event_log(&mut self, ctx: &Context) {
         Window::new("📜 Event Log")
-            .default_size([400.0, 300.0])
+            .default_size([450.0, 350.0])
             .show(ctx, |ui| {
-                ui.label("Event Log - Coming Soon");
+                // Header with counts and controls
+                ui.horizontal(|ui| {
+                    let (input, game, system, debug) = self.event_counts();
+                    let total = input + game + system + debug;
+
+                    ui.label(RichText::new(format!("Total: {}", total)).strong());
+                    ui.separator();
+
+                    // Filter checkboxes with colored labels
+                    ui.checkbox(&mut self.event_filter.show_input, "");
+                    ui.label(RichText::new(format!("Input ({})", input)).color(EventType::Input.color()));
+
+                    ui.checkbox(&mut self.event_filter.show_game, "");
+                    ui.label(RichText::new(format!("Game ({})", game)).color(EventType::Game.color()));
+
+                    ui.checkbox(&mut self.event_filter.show_system, "");
+                    ui.label(RichText::new(format!("Sys ({})", system)).color(EventType::System.color()));
+
+                    ui.checkbox(&mut self.event_filter.show_debug, "");
+                    ui.label(RichText::new(format!("Dbg ({})", debug)).color(EventType::Debug.color()));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.event_log_auto_scroll, "Auto-scroll");
+                    ui.separator();
+                    if ui.button("Clear").clicked() {
+                        self.event_log.clear();
+                    }
+                });
+
                 ui.separator();
-                ui.label("Will display:");
-                ui.label("• Input events");
-                ui.label("• Game events");
-                ui.label("• System events");
+
+                // Event list
+                let row_height = 18.0;
+                egui::ScrollArea::vertical()
+                    .max_height(250.0)
+                    .stick_to_bottom(self.event_log_auto_scroll)
+                    .show(ui, |ui| {
+                        for entry in &self.event_log {
+                            // Skip filtered events
+                            if !self.event_filter.should_show(entry.event_type) {
+                                continue;
+                            }
+
+                            ui.horizontal(|ui| {
+                                // Timestamp
+                                ui.label(
+                                    RichText::new(format!("[{:>7.2}]", entry.timestamp))
+                                        .color(Color32::GRAY)
+                                        .small()
+                                );
+
+                                // Event type badge
+                                let type_color = entry.event_type.color();
+                                ui.label(
+                                    RichText::new(format!("[{}]", entry.event_type.name()))
+                                        .color(type_color)
+                                        .small()
+                                );
+
+                                // Message
+                                ui.label(RichText::new(&entry.message).small());
+                            });
+
+                            ui.add_space(row_height - 14.0);
+                        }
+
+                        // Show message if no events match filter
+                        let visible_count = self.event_log.iter()
+                            .filter(|e| self.event_filter.should_show(e.event_type))
+                            .count();
+
+                        if visible_count == 0 {
+                            if self.event_log.is_empty() {
+                                ui.label(RichText::new("No events recorded yet.").color(Color32::GRAY));
+                            } else {
+                                ui.label(RichText::new("No events match current filters.").color(Color32::GRAY));
+                            }
+                        }
+                    });
+
+                // Footer with hotkey hint
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("F6").color(Color32::GRAY).small());
+                    ui.label(RichText::new("Event Log").small());
+                });
             });
     }
 

@@ -22,6 +22,7 @@ pub use overlay::{
     ZOrderLabel, LayerInfo, ZOrderDebugData,
     EntityInfo, ComponentInfo, ComponentValue, EcsInspectorData,
     DisplayRenderStats,
+    EventType, EventLogEntry, EventLogFilter,
 };
 #[cfg(feature = "debug-tools")]
 pub use egui::Color32 as DebugColor;

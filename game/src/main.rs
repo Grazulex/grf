@@ -151,6 +151,7 @@ impl App for Game {
                 window.scale_factor() as f32,
             );
             self.egui_renderer = Some(egui_renderer);
+            self.debug_overlay.log_system(0.0, "Debug tools initialized");
             info!("Debug tools initialized (F12 to toggle)");
         }
 
@@ -170,6 +171,9 @@ impl App for Game {
                 let (w, h) = tilemap.pixel_size();
                 let start = Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
 
+                #[cfg(feature = "debug-tools")]
+                self.debug_overlay.log_system(0.0, format!("Map loaded: test.json ({}x{})", w, h));
+
                 // Store tilemap as resource
                 self.world.insert_resource(tilemap);
 
@@ -177,6 +181,8 @@ impl App for Game {
             }
             Err(e) => {
                 error!("Failed to load tilemap: {}", e);
+                #[cfg(feature = "debug-tools")]
+                self.debug_overlay.log_system(0.0, format!("Map load failed: {}", e));
                 Vec2::new(160.0, 120.0)
             }
         };
@@ -230,14 +236,9 @@ impl App for Game {
             let toggle_debug = input.map(|i| i.is_key_just_pressed(KeyCode::F12)).unwrap_or(false);
             if toggle_debug {
                 self.debug_overlay.toggle();
-                info!(
-                    "Debug overlay {}",
-                    if self.debug_overlay.is_enabled() {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                );
+                let state = if self.debug_overlay.is_enabled() { "enabled" } else { "disabled" };
+                self.debug_overlay.log_debug(self.game_time.total_time(), format!("Debug overlay {}", state));
+                info!("Debug overlay {}", state);
             }
 
             // Ctrl+C toggles collision boxes
@@ -246,14 +247,9 @@ impl App for Game {
                 .unwrap_or(false);
             if toggle_collision && self.debug_overlay.is_enabled() {
                 self.debug_overlay.config.show_collisions = !self.debug_overlay.config.show_collisions;
-                info!(
-                    "Collision boxes {}",
-                    if self.debug_overlay.config.show_collisions {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                );
+                let state = if self.debug_overlay.config.show_collisions { "enabled" } else { "disabled" };
+                self.debug_overlay.log_debug(self.game_time.total_time(), format!("Collision boxes {}", state));
+                info!("Collision boxes {}", state);
             }
 
             // Ctrl+Z toggles z-order labels
@@ -262,14 +258,9 @@ impl App for Game {
                 .unwrap_or(false);
             if toggle_zorder && self.debug_overlay.is_enabled() {
                 self.debug_overlay.config.show_z_order = !self.debug_overlay.config.show_z_order;
-                info!(
-                    "Z-order labels {}",
-                    if self.debug_overlay.config.show_z_order {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                );
+                let state = if self.debug_overlay.config.show_z_order { "enabled" } else { "disabled" };
+                self.debug_overlay.log_debug(self.game_time.total_time(), format!("Z-order labels {}", state));
+                info!("Z-order labels {}", state);
             }
         }
 
@@ -294,6 +285,11 @@ impl App for Game {
             }
         };
         if let Some((map_path, spawn_id)) = transition {
+            #[cfg(feature = "debug-tools")]
+            self.debug_overlay.log_game(
+                self.game_time.total_time(),
+                format!("Map transition: {} -> {}", map_path, spawn_id),
+            );
             self.load_map(&map_path, &spawn_id);
         }
 
